@@ -2,15 +2,23 @@
   "name": "volt",
   "displayName": "Volt",
   "description": "Fast, free HTTP client for VS Code",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "volt-dev",
   "license": "MIT",
   "private": true,
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "keywords": ["http", "rest", "api", "client", "requests"],
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "http",
+    "rest",
+    "api",
+    "client",
+    "requests"
+  ],
   "activationEvents": [
     "workspaceContains:.volt/collection.yaml",
     "onCommand:volt.newRequest",
@@ -22,9 +30,9 @@
     "onCommand:volt.import",
     "onCommand:volt.exportRequest",
     "onCommand:volt.exportFolder",
-      "onCommand:volt.duplicateRequest",
-      "onCommand:volt.duplicateFolder",
-      "onCommand:volt.importPostman"
+    "onCommand:volt.duplicateRequest",
+    "onCommand:volt.duplicateFolder",
+    "onCommand:volt.importPostman"
   ],
   "main": "./dist/extension.js",
   "contributes": {
