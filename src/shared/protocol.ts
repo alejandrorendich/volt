@@ -274,6 +274,31 @@ export interface DeleteHistoryEntryMessage {
   };
 }
 
+/**
+ * Execute all requests in a folder sequentially (Collection Runner).
+ * The host emits `event:runner-progress` after each request and
+ * `event:runner-complete` when all requests have been executed.
+ */
+export interface RunCollectionMessage {
+  readonly type: 'request:run-collection';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Top-level folder name inside `.volt/requests/` */
+    readonly folder: string;
+    /** Delay in milliseconds between requests (default: 0). */
+    readonly delay?: number;
+  };
+}
+
+/**
+ * Clear the in-memory cookie jar.
+ * No reply is sent.
+ */
+export interface ClearCookiesMessage {
+  readonly type: 'request:clear-cookies';
+  readonly correlationId: CorrelationId;
+}
+
 /** All messages originating from the webview. */
 export type HostMessage =
   | ExecuteRequestMessage
@@ -295,7 +320,9 @@ export type HostMessage =
   | ImportMessage
   | GetHistoryMessage
   | ClearHistoryMessage
-  | DeleteHistoryEntryMessage;
+  | DeleteHistoryEntryMessage
+  | RunCollectionMessage
+  | ClearCookiesMessage;
 
 // ---------------------------------------------------------------------------
 // Host → Webview messages  (prefix: `response:*` or `event:*`)
@@ -447,6 +474,51 @@ export interface HistoryResponseMessage {
   };
 }
 
+/**
+ * Assertion results pushed after every request execution.
+ * Contains the pass/fail outcome and actual value for each assertion rule.
+ */
+export interface AssertionResultMessage {
+  readonly type: 'event:assertion-results';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly results: ReadonlyArray<import('./models').AssertionResult>;
+  };
+}
+
+/**
+ * Per-request progress event emitted during a collection run.
+ * Pushed after each request completes.
+ */
+export interface RunnerProgressMessage {
+  readonly type: 'event:runner-progress';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly index: number;
+    readonly total: number;
+    readonly requestName: string;
+    readonly status: number;
+    readonly time: number;
+    readonly pass: boolean;
+    readonly assertionsPassed: number;
+    readonly assertionsTotal: number;
+  };
+}
+
+/**
+ * Emitted when the entire collection run has finished.
+ */
+export interface RunnerCompleteMessage {
+  readonly type: 'event:runner-complete';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly total: number;
+    readonly passed: number;
+    readonly failed: number;
+    readonly totalTime: number;
+  };
+}
+
 /** All messages originating from the extension host. */
 export type WebviewMessage =
   | ExecuteResponseMessage
@@ -458,4 +530,7 @@ export type WebviewMessage =
   | RequestSavedMessage
   | ScriptErrorMessage
   | BinaryFilePickedMessage
-  | HistoryResponseMessage;
+  | HistoryResponseMessage
+  | AssertionResultMessage
+  | RunnerProgressMessage
+  | RunnerCompleteMessage;

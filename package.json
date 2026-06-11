@@ -2,7 +2,7 @@
   "name": "volt",
   "displayName": "Volt",
   "description": "Fast, free HTTP client for VS Code",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "volt-dev",
   "license": "MIT",
   "private": true,
@@ -34,7 +34,9 @@
     "onCommand:volt.duplicateFolder",
     "onCommand:volt.importPostman",
     "onCommand:volt.renameRequest",
-    "onCommand:volt.copyAsCurl"
+    "onCommand:volt.copyAsCurl",
+    "onCommand:volt.runCollection",
+    "onCommand:volt.clearCookies"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -154,6 +156,18 @@
         "title": "Copy as cURL",
         "category": "Volt",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "volt.runCollection",
+        "title": "Run Collection",
+        "category": "Volt",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "volt.clearCookies",
+        "title": "Clear Cookie Jar",
+        "category": "Volt",
+        "icon": "$(trash)"
       }
     ],
     "keybindings": [
@@ -254,6 +268,11 @@
           "command": "volt.exportFolder",
           "when": "view == volt.collectionTree && viewItem == voltFolder",
           "group": "export@1"
+        },
+        {
+          "command": "volt.runCollection",
+          "when": "view == volt.collectionTree && viewItem == voltFolder",
+          "group": "run@1"
         },
         {
           "command": "volt.import",

@@ -27,6 +27,7 @@ import type {
   CorrelationId,
   HistoryEntry,
 } from '../shared/protocol';
+import type { CookieService } from './services/cookie-service';
 
 // ---------------------------------------------------------------------------
 // Service interface stubs (filled by later phases)
@@ -105,6 +106,7 @@ export interface RouterServices {
   readonly collection?: ICollectionService;
   readonly environment?: IEnvironmentService;
   readonly history?: IHistoryService;
+  readonly cookies?: CookieService;
 }
 
 export class MessageRouter implements vscode.Disposable {
@@ -302,6 +304,14 @@ export class MessageRouter implements vscode.Disposable {
         this.handleDeleteHistoryEntry(msg.payload.path, msg.payload.timestamp);
         break;
 
+      case 'request:run-collection':
+        await this.handleRunCollection(msg.correlationId, msg.payload.folder, msg.payload.delay ?? 0);
+        break;
+
+      case 'request:clear-cookies':
+        this.handleClearCookies();
+        break;
+
       default: {
         // Exhaustiveness guard — TypeScript will error if a new variant is
         // added to HostMessage without being handled here.
@@ -374,12 +384,21 @@ export class MessageRouter implements vscode.Disposable {
       const resolvedRequest =
         this.services.environment?.resolveRequest?.(request) ?? request;
 
+      // Inject auth headers / query params AFTER interpolation so {{token}} is resolved
+      const authedRequest = applyAuth(resolvedRequest);
+
+      // Inject cookies from the cookie jar if available (Feature 8)
+      const cookieHeader = this.services.cookies?.getCookies(authedRequest.url) ?? '';
+      const requestWithCookies = cookieHeader
+        ? { ...authedRequest, headers: { ...authedRequest.headers, Cookie: cookieHeader } }
+        : authedRequest;
+
       // Run pre-script if present
       if (request.preScript) {
         const { ScriptRunner } = await import('./services/script-runner');
         const envVars = (await this.services.environment?.getResolved())?.variables ?? {};
         const runner = new ScriptRunner(this.output, envVars);
-        const preResult = await runner.runPreScript(request.preScript, resolvedRequest);
+        const preResult = await runner.runPreScript(request.preScript, requestWithCookies);
         if (!preResult.success) {
           this.sendToWebview({
             type: 'response:execute-error',
@@ -403,7 +422,12 @@ export class MessageRouter implements vscode.Disposable {
         });
       };
 
-      const response = await this.services.http.execute(resolvedRequest, correlationId, onProgress);
+      const response = await this.services.http.execute(requestWithCookies, correlationId, onProgress);
+
+      // Capture Set-Cookie headers from response into the cookie jar (Feature 8)
+      if (this.services.cookies) {
+        this.services.cookies.captureCookies(requestWithCookies.url, response.headers);
+      }
 
       // Run post-script if present
       if (request.postScript) {
@@ -432,6 +456,18 @@ export class MessageRouter implements vscode.Disposable {
       }
 
       this.sendToWebview({ type: 'response:execute-http', correlationId, payload: response });
+
+      // Evaluate assertions if the request has any (Feature 5)
+      if (request.assertions && request.assertions.length > 0) {
+        const { evaluateAssertions } = await import('./services/assertion-evaluator');
+        const envVarsForAssertions = (await this.services.environment?.getResolved())?.variables ?? {};
+        const assertionResults = evaluateAssertions(request.assertions, response, envVarsForAssertions);
+        this.sendToWebview({
+          type: 'event:assertion-results',
+          correlationId,
+          payload: { results: assertionResults },
+        });
+      }
 
       // Record execution in history (only for saved requests with a savePath — REQ-HIST-001)
       if (this.services.history && request.id) {
@@ -1127,6 +1163,71 @@ export class MessageRouter implements vscode.Disposable {
   }
 
   // ---------------------------------------------------------------------------
+  // Collection Runner handler (Feature 7)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Execute all requests in a folder sequentially via `CollectionRunner`.
+   * Emits `event:runner-progress` after each request and
+   * `event:runner-complete` when all requests have finished.
+   */
+  private async handleRunCollection(
+    correlationId: CorrelationId,
+    folder: string,
+    delay: number,
+  ): Promise<void> {
+    if (!this.services.http || !this.services.collection) {
+      this.output.appendLine('[MessageRouter] CollectionRunner: http or collection service not available');
+      return;
+    }
+
+    try {
+      const { CollectionRunner } = await import('./services/collection-runner');
+      const runner = new CollectionRunner(
+        this.output,
+        this.services.http,
+        this.services.collection,
+        this.services.environment,
+        this.services.cookies,
+      );
+
+      await runner.runFolder(
+        folder,
+        delay,
+        (payload) => {
+          this.sendToWebview({
+            type: 'event:runner-progress',
+            correlationId,
+            payload,
+          });
+        },
+        (payload) => {
+          this.sendToWebview({
+            type: 'event:runner-complete',
+            correlationId,
+            payload,
+          });
+        },
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in run-collection: ${message}`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cookie Jar handler (Feature 8)
+  // ---------------------------------------------------------------------------
+
+  /** Clear all cookies from the in-memory cookie jar. */
+  private handleClearCookies(): void {
+    if (this.services.cookies) {
+      this.services.cookies.clearAll();
+      this.output.appendLine('[MessageRouter] Cookie jar cleared');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Internal send — bypasses queue (used for flushing and error responses)
   // ---------------------------------------------------------------------------
 
@@ -1170,4 +1271,54 @@ function isHostMessage(value: unknown): value is HostMessage {
     'type' in value &&
     typeof (value as Record<string, unknown>)['type'] === 'string'
   );
+}
+
+// ---------------------------------------------------------------------------
+// Auth injection helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Inject authentication headers or query parameters into a request AFTER
+ * environment variable interpolation. Returns a new `HttpRequestDef` with
+ * the auth applied; the original is never mutated.
+ *
+ * Supported schemes:
+ * - Bearer:  `Authorization: Bearer <token>`
+ * - Basic:   `Authorization: Basic <base64(username:password)>`
+ * - API Key: header `<key>: <value>` OR query param `<key>=<value>`
+ */
+function applyAuth(
+  request: import('../shared/models').HttpRequestDef,
+): import('../shared/models').HttpRequestDef {
+  const auth = request.auth;
+  if (!auth || auth.type === 'none') return request;
+
+  switch (auth.type) {
+    case 'bearer': {
+      const headers = { ...request.headers, Authorization: `Bearer ${auth.token}` };
+      return { ...request, headers };
+    }
+
+    case 'basic': {
+      const encoded = Buffer.from(`${auth.username}:${auth.password}`).toString('base64');
+      const headers = { ...request.headers, Authorization: `Basic ${encoded}` };
+      return { ...request, headers };
+    }
+
+    case 'apikey': {
+      if (auth.addTo === 'header') {
+        const headers = { ...request.headers, [auth.key]: auth.value };
+        return { ...request, headers };
+      } else {
+        // Append as query parameter — preserve existing enabled params
+        const extraParam: import('../shared/models').QueryParam = {
+          key: auth.key,
+          value: auth.value,
+          enabled: true,
+        };
+        const queryParams = [...request.queryParams, extraParam];
+        return { ...request, queryParams };
+      }
+    }
+  }
 }

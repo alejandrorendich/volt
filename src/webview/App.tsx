@@ -13,6 +13,7 @@ import { RequestBuilder } from './components/RequestBuilder';
 import { ResponseViewer } from './components/ResponseViewer';
 import { EnvSwitcher } from './components/EnvSwitcher';
 import { TabBar } from './components/TabBar';
+import { CollectionRunner } from './components/CollectionRunner';
 import { useMessage, postMessageToHost } from './hooks/useMessage';
 import { useSaveRequest } from './hooks/useSaveRequest';
 import { useRequestStore } from './stores/request-store';
@@ -20,6 +21,7 @@ import { useResponseStore } from './stores/response-store';
 import { useCollectionStore } from './stores/collection-store';
 import { useEnvStore } from './stores/env-store';
 import { useHistoryStore } from './stores/history-store';
+import { useRunnerStore } from './stores/runner-store';
 import type { WebviewMessage } from '../shared/protocol';
 import './styles/app.css';
 
@@ -38,6 +40,7 @@ function useMessageRouter(): void {
       const envStore = useEnvStore.getState();
       const requestStore = useRequestStore.getState();
       const historyStore = useHistoryStore.getState();
+      const runnerStore = useRunnerStore.getState();
 
       switch (msg.type) {
         case 'response:execute-http':
@@ -105,6 +108,7 @@ function useMessageRouter(): void {
               preScript: msg.payload.preScript ?? '',
               postScript: msg.payload.postScript ?? '',
               sslVerify: msg.payload.settings?.sslVerify !== false,
+              assertions: msg.payload.assertions ? [...msg.payload.assertions] : [],
             });
             // Reset response panel for fresh context
             responseStore.reset();
@@ -126,6 +130,11 @@ function useMessageRouter(): void {
           requestStore.setScriptError(msg.payload);
           break;
 
+        case 'event:assertion-results':
+          // Assertion results — store for display in the Tests tab
+          requestStore.setAssertionResults([...msg.payload.results]);
+          break;
+
         case 'response:request-saved':
           // Host confirms save — update savePath so future saves hit the same file
           requestStore.setSavePath(msg.payload.path);
@@ -135,6 +144,40 @@ function useMessageRouter(): void {
         case 'response:history':
           // Host replies with history entries for the requested path
           historyStore.setHistory(msg.payload.path, msg.payload.entries);
+          break;
+
+        case 'event:runner-progress':
+          // Per-request progress from the collection runner
+          {
+            const p = msg.payload;
+            // Initialize run if not yet started
+            if (runnerStore.status === 'idle') {
+              runnerStore.startRun('', p.total);
+            }
+            // Only add non-empty progress (skip the initializer sentinel with empty requestName)
+            if (p.requestName) {
+              runnerStore.addProgress({
+                index: p.index,
+                total: p.total,
+                requestName: p.requestName,
+                status: p.status,
+                time: p.time,
+                pass: p.pass,
+                assertionsPassed: p.assertionsPassed,
+                assertionsTotal: p.assertionsTotal,
+              });
+            }
+          }
+          break;
+
+        case 'event:runner-complete':
+          // Run finished
+          runnerStore.complete({
+            total: msg.payload.total,
+            passed: msg.payload.passed,
+            failed: msg.payload.failed,
+            totalTime: msg.payload.totalTime,
+          });
           break;
 
         default:
@@ -167,6 +210,9 @@ export function App(): React.ReactElement {
 
   // Autosave + Ctrl+S
   useSaveRequest();
+
+  // Track runner status to know whether to show the runner panel
+  const runnerStatus = useRunnerStore((s) => s.status);
 
   // Resizable split panel
   const splitRef = useRef<HTMLDivElement>(null);
@@ -214,7 +260,7 @@ export function App(): React.ReactElement {
           onMouseDown={handleDividerMouseDown}
         />
         <div className="volt-panel volt-panel--response" style={builderWidth !== null ? { flex: `0 0 ${100 - builderWidth}%` } : undefined}>
-          <ResponseViewer />
+          {runnerStatus !== 'idle' ? <CollectionRunner /> : <ResponseViewer />}
         </div>
       </div>
     </div>

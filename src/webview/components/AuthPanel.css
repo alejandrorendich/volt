@@ -1,0 +1,114 @@
+/**
+ * @fileoverview AuthPanel component styles.
+ */
+
+.auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--volt-space-4);
+  padding: var(--volt-space-4) var(--volt-space-5);
+}
+
+/* Row containing label + control */
+.auth-panel__row {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-4);
+}
+
+.auth-panel__row--type {
+  padding-bottom: var(--volt-space-4);
+  border-bottom: 1px solid var(--volt-border);
+}
+
+/* Labels */
+.auth-panel__label {
+  font-size: var(--volt-font-size-sm);
+  font-weight: 600;
+  color: var(--volt-fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+/* Inputs */
+.auth-panel__input {
+  flex: 1;
+  background: var(--volt-input-bg);
+  color: var(--volt-input-fg);
+  border: 1px solid var(--volt-input-border);
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  outline: none;
+  width: 100%;
+}
+
+.auth-panel__input:focus {
+  border-color: var(--volt-border-focus);
+}
+
+.auth-panel__input::placeholder {
+  color: var(--volt-input-placeholder);
+}
+
+/* Select dropdowns */
+.auth-panel__select {
+  background: var(--volt-dropdown-bg);
+  color: var(--volt-fg-primary);
+  border: 1px solid var(--volt-dropdown-border);
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size);
+  padding: var(--volt-space-2) var(--volt-space-3);
+  cursor: pointer;
+  outline: none;
+}
+
+.auth-panel__select:focus-visible {
+  border-color: var(--volt-border-focus);
+}
+
+.auth-panel__select--small {
+  min-width: 120px;
+}
+
+/* Fields layout — stacked rows of label + input */
+.auth-panel__fields {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  align-items: center;
+  gap: var(--volt-space-3) var(--volt-space-4);
+}
+
+/* Hint spans span both columns */
+.auth-panel__hint {
+  grid-column: 1 / -1;
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-secondary);
+  margin-top: var(--volt-space-2);
+}
+
+.auth-panel__hint code {
+  font-family: var(--volt-font-mono);
+  background: var(--volt-bg-elevated);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+/* Empty / no-auth state */
+.auth-panel__empty {
+  padding: var(--volt-space-6) 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-panel__empty-text {
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-secondary);
+  text-align: center;
+}

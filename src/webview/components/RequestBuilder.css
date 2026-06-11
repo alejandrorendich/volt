@@ -164,26 +164,52 @@
   to { transform: rotate(360deg); }
 }
 
+/* Generate Code button */
+.rb-codegen-btn {
+  padding: 4px 8px;
+  border: 1px solid var(--vscode-button-secondaryBackground);
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: var(--volt-font-mono, monospace);
+  cursor: pointer;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+  letter-spacing: -0.5px;
+}
+
+.rb-codegen-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
 /* Save button */
 .rb-save {
-  padding: 6px 10px;
-  border: none;
+  padding: 4px 10px;
+  border: 1px solid var(--vscode-button-secondaryBackground);
   border-radius: 3px;
-  font-size: 12px;
+  font-size: 11px;
   font-family: var(--vscode-font-family);
   cursor: pointer;
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
   white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.rb-save:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
 }
 
 .rb-save--dirty {
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
+  background: #2ea04370;
+  color: #4ade80;
+  border-color: #2ea04380;
 }
 
 .rb-save--dirty:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
+  background: #2ea04390;
 }
 
 /* ---------------------------------------------------------------------------
@@ -248,6 +274,25 @@
   min-width: 16px;
   text-align: center;
   line-height: 1.4;
+}
+
+.rb-badge--pass {
+  background: rgba(35, 134, 54, 0.2);
+  color: #3fb950;
+  font-size: var(--volt-font-size-sm);
+  font-weight: 700;
+  padding: 0 var(--volt-space-2);
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* Tests panel */
+.rb-panel--tests {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -674,4 +719,60 @@
 
 .rb-ssl-toggle:hover .rb-ssl-toggle__label {
   color: var(--volt-fg-primary);
+}
+
+/* ---------------------------------------------------------------------------
+ * Timeout input (Sprint 1 — Feature 2)
+ * --------------------------------------------------------------------------- */
+.rb-timeout-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  cursor: default;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.rb-timeout-input {
+  width: 60px;
+  background: var(--volt-input-bg);
+  color: var(--volt-input-fg);
+  border: 1px solid var(--volt-input-border);
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size-sm);
+  padding: 2px var(--volt-space-2);
+  outline: none;
+  text-align: right;
+  /* hide spin buttons to keep compact */
+  -moz-appearance: textfield;
+}
+
+.rb-timeout-input::-webkit-inner-spin-button,
+.rb-timeout-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.rb-timeout-input:focus {
+  border-color: var(--volt-border-focus);
+}
+
+.rb-timeout-input::placeholder {
+  color: var(--volt-input-placeholder);
+  font-family: var(--volt-font-mono);
+}
+
+/* Auth badge variant */
+.rb-badge--auth {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+  font-size: var(--volt-font-size-sm);
+  font-weight: 700;
+  padding: 0 var(--volt-space-2);
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.4;
+  border: 1px solid rgba(88, 166, 255, 0.25);
 }

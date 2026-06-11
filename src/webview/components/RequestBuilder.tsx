@@ -17,6 +17,9 @@ import { useResponseStore } from '../stores/response-store';
 import { useHistoryStore } from '../stores/history-store';
 import { useMessage } from '../hooks/useMessage';
 import { KeyValueEditor } from './KeyValueEditor';
+import { AssertionsPanel } from './AssertionsPanel';
+import { CodegenPanel } from './CodegenPanel';
+import { AuthPanel } from './AuthPanel';
 import type { HttpMethod, RequestBody } from '../../shared/models';
 import type { HistoryEntry } from '../../shared/protocol';
 import './RequestBuilder.css';
@@ -538,6 +541,13 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
 // RequestBuilder
 // ---------------------------------------------------------------------------
 
+/** Short labels used in the Auth tab badge. */
+const AUTH_TYPE_BADGE_LABELS: Record<'bearer' | 'basic' | 'apikey', string> = {
+  bearer: 'Bearer',
+  basic: 'Basic',
+  apikey: 'API Key',
+};
+
 export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement {
   const method = useRequestStore((s) => s.method);
   const setMethod = useRequestStore((s) => s.setMethod);
@@ -552,6 +562,11 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const savePath = useRequestStore((s) => s.savePath);
   const sslVerify = useRequestStore((s) => s.sslVerify);
   const setSslVerify = useRequestStore((s) => s.setSslVerify);
+  const followRedirects = useRequestStore((s) => s.followRedirects);
+  const setFollowRedirects = useRequestStore((s) => s.setFollowRedirects);
+  const timeout = useRequestStore((s) => s.timeout);
+  const setTimeoutValue = useRequestStore((s) => s.setTimeout);
+  const auth = useRequestStore((s) => s.auth);
 
   // History tab state — local to avoid touching store snapshot machinery
   const [activeLocalTab, setActiveLocalTab] = useState<'store' | 'history'>('store');
@@ -647,6 +662,16 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const hasBody = body.type !== 'none';
   const hasScripts = preScript.trim() !== '' || postScript.trim() !== '';
 
+  // Assertions badge — show pass/fail summary after execution
+  const assertions = useRequestStore((s) => s.assertions);
+  const assertionResults = useRequestStore((s) => s.assertionResults);
+  const assertionPassCount = assertionResults.filter((r) => r.pass).length;
+  const assertionTotal = assertionResults.length;
+  const hasAssertions = assertions.length > 0;
+
+  // Code generation panel
+  const [codegenOpen, setCodegenOpen] = useState(false);
+
   // When switching away from history tab, restore to store-managed tabs
   const handleStoreTabClick = useCallback(
     (tab: RequestState['activeTab']) => {
@@ -663,6 +688,9 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const isHistoryTabActive = activeLocalTab === 'history';
   const isStoreTabActive = (tab: RequestState['activeTab']): boolean =>
     activeLocalTab === 'store' && activeTab === tab;
+
+  // Auth badge — show the active auth type name when not "none"
+  const authBadgeLabel = auth.type !== 'none' ? AUTH_TYPE_BADGE_LABELS[auth.type] : null;
 
   return (
     <div className="rb-root">
@@ -710,6 +738,17 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
         {/* Save button */}
         <SaveButton />
 
+        {/* Generate Code button */}
+        <button
+          type="button"
+          className="rb-codegen-btn"
+          onClick={() => setCodegenOpen(true)}
+          aria-label="Generate code snippet"
+          title="Generate code (</>)"
+        >
+          {'</>'}
+        </button>
+
         {/* SSL verification toggle */}
         <label className="rb-ssl-toggle" title="Toggle TLS certificate verification">
           <input
@@ -720,6 +759,36 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
             aria-label="Verify SSL certificate"
           />
           <span className="rb-ssl-toggle__label">SSL</span>
+        </label>
+
+        {/* Follow Redirects toggle */}
+        <label className="rb-ssl-toggle" title="Toggle automatic redirect following">
+          <input
+            type="checkbox"
+            className="rb-ssl-toggle__checkbox"
+            checked={followRedirects}
+            onChange={(e) => setFollowRedirects(e.target.checked)}
+            aria-label="Follow redirects"
+          />
+          <span className="rb-ssl-toggle__label">Redirects</span>
+        </label>
+
+        {/* Timeout input */}
+        <label className="rb-timeout-wrap" title="Request timeout in milliseconds (empty = default 30s)">
+          <input
+            type="number"
+            className="rb-timeout-input"
+            value={timeout ?? ''}
+            min={0}
+            step={500}
+            onChange={(e) => {
+              const val = e.target.value;
+              setTimeoutValue(val === '' ? null : Math.max(0, parseInt(val, 10)));
+            }}
+            placeholder="30000"
+            aria-label="Request timeout in milliseconds"
+          />
+          <span className="rb-ssl-toggle__label">ms</span>
         </label>
       </div>
 
@@ -777,6 +846,41 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           ) : hasScripts ? (
             <span className="rb-badge">●</span>
           ) : null}
+        </button>
+        <button
+          role="tab"
+          type="button"
+          className={`rb-tab${isStoreTabActive('tests') ? ' rb-tab--active' : ''}`}
+          onClick={() => handleStoreTabClick('tests')}
+          aria-selected={isStoreTabActive('tests')}
+          aria-controls="rb-panel-tests"
+        >
+          Tests{' '}
+          {assertionTotal > 0 ? (
+            <span
+              className={`rb-badge${assertionPassCount === assertionTotal ? ' rb-badge--pass' : ' rb-badge--error'}`}
+              aria-label={`${assertionPassCount}/${assertionTotal} assertions passed`}
+            >
+              {assertionPassCount}/{assertionTotal}
+            </span>
+          ) : hasAssertions ? (
+            <span className="rb-badge">{assertions.length}</span>
+          ) : null}
+        </button>
+        <button
+          role="tab"
+          type="button"
+          className={`rb-tab${isStoreTabActive('auth') ? ' rb-tab--active' : ''}`}
+          onClick={() => handleStoreTabClick('auth')}
+          aria-selected={isStoreTabActive('auth')}
+          aria-controls="rb-panel-auth"
+        >
+          Auth{' '}
+          {authBadgeLabel && (
+            <span className="rb-badge rb-badge--auth" aria-label={`Auth type: ${authBadgeLabel}`}>
+              {authBadgeLabel}
+            </span>
+          )}
         </button>
         {savePath !== null && (
           <button
@@ -850,6 +954,26 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           <ScriptEditor />
         </div>
 
+        <div
+          id="rb-panel-tests"
+          role="tabpanel"
+          aria-label="Assertion tests"
+          hidden={!isStoreTabActive('tests')}
+          className="rb-panel rb-panel--tests"
+        >
+          <AssertionsPanel />
+        </div>
+
+        <div
+          id="rb-panel-auth"
+          role="tabpanel"
+          aria-label="Authentication"
+          hidden={!isStoreTabActive('auth')}
+          className="rb-panel"
+        >
+          <AuthPanel />
+        </div>
+
         {savePath !== null && (
           <div
             id="rb-panel-history"
@@ -862,6 +986,11 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           </div>
         )}
       </div>
+
+      {/* Code generation modal */}
+      {codegenOpen && (
+        <CodegenPanel onClose={() => setCodegenOpen(false)} />
+      )}
     </div>
   );
 });

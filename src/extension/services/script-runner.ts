@@ -70,6 +70,10 @@ export interface ScriptResult {
   logs: string[];
   /** Error message if script failed */
   error?: string;
+  /** Number of pm.test() assertions that passed */
+  assertionsPassed: number;
+  /** Total number of pm.test() assertions executed */
+  assertionsTotal: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +93,7 @@ export class ScriptRunner {
    * Execute a pre-request script.
    */
   async runPreScript(script: string, request: HttpRequestDef): Promise<ScriptResult> {
-    if (!script.trim()) return { success: true, envUpdates: {}, logs: [] };
+    if (!script.trim()) return { success: true, envUpdates: {}, logs: [], assertionsPassed: 0, assertionsTotal: 0 };
 
     const envUpdates: Record<string, string> = {};
     const logs: string[] = [];
@@ -130,7 +134,7 @@ export class ScriptRunner {
    * Execute a post-request script.
    */
   async runPostScript(script: string, response: HttpResponseDef): Promise<ScriptResult> {
-    if (!script.trim()) return { success: true, envUpdates: {}, logs: [] };
+    if (!script.trim()) return { success: true, envUpdates: {}, logs: [], assertionsPassed: 0, assertionsTotal: 0 };
 
     const envUpdates: Record<string, string> = {};
     const logs: string[] = [];
@@ -187,6 +191,54 @@ export class ScriptRunner {
     logs: string[],
     envUpdates: Record<string, string>,
   ): Promise<ScriptResult> {
+    let assertionsPassed = 0;
+    let assertionsTotal = 0;
+
+    // pm.test() shim — Postman-compatible assertion tracker
+    const pm = {
+      test: (name: string, fn: () => void): void => {
+        assertionsTotal++;
+        try {
+          fn();
+          assertionsPassed++;
+          logs.push(`✓ ${name}`);
+          this.output.appendLine(`[Script:assertion] PASS: ${name}`);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logs.push(`✗ ${name}: ${msg}`);
+          this.output.appendLine(`[Script:assertion] FAIL: ${name} — ${msg}`);
+        }
+      },
+      expect: (value: unknown) => ({
+        to: {
+          equal: (expected: unknown) => {
+            if (value !== expected) {
+              throw new Error(`Expected ${JSON.stringify(value)} to equal ${JSON.stringify(expected)}`);
+            }
+          },
+          be: {
+            ok: () => {
+              if (!value) throw new Error(`Expected ${JSON.stringify(value)} to be truthy`);
+            },
+          },
+          include: (substr: string) => {
+            if (typeof value !== 'string' || !value.includes(substr)) {
+              throw new Error(`Expected "${String(value)}" to include "${substr}"`);
+            }
+          },
+        },
+        not: {
+          to: {
+            equal: (expected: unknown) => {
+              if (value === expected) {
+                throw new Error(`Expected value to not equal ${JSON.stringify(expected)}`);
+              }
+            },
+          },
+        },
+      }),
+    };
+
     try {
       // Build async function with context variables as parameters (H-09)
       // AsyncFunction supports await inside user scripts.
@@ -194,19 +246,20 @@ export class ScriptRunner {
         // empty
       }).constructor as new (...args: string[]) => (...values: unknown[]) => Promise<unknown>;
 
-      const paramNames = Object.keys(context);
-      const paramValues = Object.values(context);
+      const contextWithPm = { ...context, pm };
+      const paramNames = Object.keys(contextWithPm);
+      const paramValues = Object.values(contextWithPm);
 
       const wrappedScript = `"use strict";\n${script}`;
 
       const fn = new AsyncFunction(...paramNames, wrappedScript);
       await fn(...paramValues);
 
-      return { success: true, envUpdates, logs };
+      return { success: true, envUpdates, logs, assertionsPassed, assertionsTotal };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.output.appendLine(`[ScriptRunner] ERROR: ${message}`);
-      return { success: false, envUpdates, logs, error: message };
+      return { success: false, envUpdates, logs, error: message, assertionsPassed, assertionsTotal };
     }
   }
 }

@@ -20,7 +20,7 @@
  * @see REQ-HTTP-007 — TLS Certificate Handling
  */
 
-import { request as undiciRequest, Agent } from 'undici';
+import { request as undiciRequest, Agent, ProxyAgent } from 'undici';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -114,12 +114,19 @@ export class HttpService implements IHttpService, vscode.Disposable {
     options: HttpRequestOptions = {},
   ): Promise<HttpExecuteResult> {
     const {
-      timeoutMs = DEFAULT_TIMEOUT_MS,
-      followRedirects = true,
+      timeoutMs: optionsTimeoutMs = DEFAULT_TIMEOUT_MS,
+      followRedirects: optionsFollowRedirects = true,
       maxRedirects = DEFAULT_MAX_REDIRECTS,
       bodySizeLimit = DEFAULT_BODY_SIZE_LIMIT,
       rejectUnauthorized = true,
     } = options;
+
+    // Per-request timeout override from the request definition
+    const timeoutMs = requestDef.timeout != null ? requestDef.timeout : optionsTimeoutMs;
+
+    // Per-request redirect override from settings
+    const followRedirects =
+      requestDef.settings?.followRedirects === false ? false : optionsFollowRedirects;
 
     // Per-request SSL override: if settings.sslVerify is explicitly false, disable verification
     const effectiveRejectUnauthorized =
@@ -137,13 +144,28 @@ export class HttpService implements IHttpService, vscode.Disposable {
     try {
       this.output.appendLine(`[HttpService] ${requestDef.method} ${url} (correlationId: ${correlationId})`);
 
-      // Build undici agent (controls TLS and per-agent options)
-      const agent = new Agent({
-        connect: {
-          rejectUnauthorized: effectiveRejectUnauthorized,
-        },
-        maxRedirections: followRedirects ? maxRedirects : 0,
-      });
+      // --- Proxy detection (Feature 4) ---
+      // Read VS Code's http.proxy setting; honour it transparently.
+      const proxyUrl = vscode.workspace.getConfiguration('http').get<string>('proxy') ?? '';
+      const proxyStrictSSL = vscode.workspace.getConfiguration('http').get<boolean>('proxyStrictSSL') ?? true;
+
+      // Build undici dispatcher — proxy-aware if configured
+      let dispatcher: Agent | ProxyAgent;
+      if (proxyUrl) {
+        dispatcher = new ProxyAgent({
+          uri: proxyUrl,
+          connect: {
+            rejectUnauthorized: proxyStrictSSL && effectiveRejectUnauthorized,
+          },
+        });
+      } else {
+        dispatcher = new Agent({
+          connect: {
+            rejectUnauthorized: effectiveRejectUnauthorized,
+          },
+          maxRedirections: followRedirects ? maxRedirects : 0,
+        });
+      }
 
       // Build request headers
       const headers: Record<string, string> = { ...requestDef.headers };
@@ -163,7 +185,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
         signal: controller.signal,
         headersTimeout: timeoutMs,
         bodyTimeout: timeoutMs,
-        dispatcher: agent,
+        dispatcher,
         maxRedirections: followRedirects ? maxRedirects : 0,
         throwOnError: false,
       } as Parameters<typeof undiciRequest>[1]);

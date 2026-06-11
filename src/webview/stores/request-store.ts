@@ -11,7 +11,7 @@
  */
 
 import { create } from 'zustand';
-import type { HttpMethod, RequestBody, QueryParam } from '../../shared/models';
+import type { HttpMethod, RequestBody, QueryParam, AuthConfig, AssertionRule, AssertionResult } from '../../shared/models';
 
 // ---------------------------------------------------------------------------
 // Header row (with enabled toggle)
@@ -63,8 +63,12 @@ export interface TabSnapshot {
   queryParams: QueryParam[];
   preScript: string;
   postScript: string;
-  activeTab: 'params' | 'headers' | 'body' | 'scripts';
+  activeTab: 'params' | 'headers' | 'body' | 'scripts' | 'auth' | 'tests';
   sslVerify: boolean;
+  followRedirects: boolean;
+  timeout: number | null;
+  auth: AuthConfig;
+  assertions: AssertionRule[];
 }
 
 // ---------------------------------------------------------------------------
@@ -93,9 +97,19 @@ export interface RequestState {
   /** Post-request script (JavaScript). */
   postScript: string;
   /** Active sub-tab in the builder panels. */
-  activeTab: 'params' | 'headers' | 'body' | 'scripts';
+  activeTab: 'params' | 'headers' | 'body' | 'scripts' | 'auth' | 'tests';
   /** Whether TLS certificate verification is enabled. Default: true */
   sslVerify: boolean;
+  /** Whether to follow 3xx redirects. Default: true */
+  followRedirects: boolean;
+  /** Request timeout in milliseconds. Null means use the default (30 s). */
+  timeout: number | null;
+  /** Authentication configuration for this request. Default: { type: 'none' } */
+  auth: AuthConfig;
+  /** GUI-based assertion rules for this request. */
+  assertions: AssertionRule[];
+  /** Results of the last assertion evaluation. Cleared on new request. */
+  assertionResults: AssertionResult[];
   /** Whether a request is currently in-flight. */
   loading: boolean;
   /** CorrelationId of the active in-flight request (for cancel). */
@@ -159,6 +173,15 @@ export interface RequestActions {
   // SSL verification toggle (F-05)
   setSslVerify: (sslVerify: boolean) => void;
 
+  // Follow redirects toggle
+  setFollowRedirects: (followRedirects: boolean) => void;
+
+  // Timeout
+  setTimeout: (timeout: number | null) => void;
+
+  // Auth
+  setAuth: (auth: AuthConfig) => void;
+
   // Tab management (REQ-RB-007)
   addTab: () => void;
   closeTab: (tabId: string) => void;
@@ -171,6 +194,12 @@ export interface RequestActions {
   // Script error feedback
   /** Set a script error to show in the Scripts tab. Pass null to clear. */
   setScriptError: (error: { phase: 'pre' | 'post'; message: string } | null) => void;
+
+  // Assertions (Feature 5)
+  addAssertion: () => void;
+  updateAssertion: (id: string, patch: Partial<Omit<AssertionRule, 'id'>>) => void;
+  removeAssertion: (id: string) => void;
+  setAssertionResults: (results: AssertionResult[]) => void;
 
   // Save
   /** Get the savePath for the current request. */
@@ -262,6 +291,10 @@ function captureSnapshot(s: RequestState): TabSnapshot {
     postScript: s.postScript,
     activeTab: s.activeTab,
     sslVerify: s.sslVerify,
+    followRedirects: s.followRedirects,
+    timeout: s.timeout,
+    auth: s.auth,
+    assertions: s.assertions,
   };
 }
 
@@ -282,6 +315,10 @@ function applySnapshot(snapshot: TabSnapshot): Partial<RequestState> {
     postScript: snapshot.postScript,
     activeTab: snapshot.activeTab,
     sslVerify: snapshot.sslVerify,
+    followRedirects: snapshot.followRedirects,
+    timeout: snapshot.timeout,
+    auth: snapshot.auth,
+    assertions: snapshot.assertions,
   };
 }
 
@@ -312,6 +349,10 @@ const INITIAL_SNAPSHOT: TabSnapshot = {
   postScript: '',
   activeTab: 'params',
   sslVerify: true,
+  followRedirects: true,
+  timeout: null,
+  auth: { type: 'none' },
+  assertions: [],
 };
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
@@ -326,6 +367,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   tabSnapshots: new Map(),
   streamingPhase: null,
   scriptError: null,
+  assertionResults: [],
 
   // Actions
   setMethod: (method) => {
@@ -368,9 +410,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       loading,
       activeCorrelationId: correlationId !== undefined ? correlationId : get().activeCorrelationId,
     };
-    // Clear any script error when a new request starts
+    // Clear any script error and assertion results when a new request starts
     if (loading) {
       patch.scriptError = null;
+      patch.assertionResults = [];
     }
     set(patch);
   },
@@ -494,7 +537,17 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       queryParams: s.queryParams.filter((p) => p.key.trim() !== ''),
       ...(s.preScript ? { preScript: s.preScript } : {}),
       ...(s.postScript ? { postScript: s.postScript } : {}),
-      ...(!s.sslVerify ? { settings: { sslVerify: false } } : {}),
+      ...(s.auth.type !== 'none' ? { auth: s.auth } : {}),
+      ...(s.timeout !== null ? { timeout: s.timeout } : {}),
+      ...(!s.sslVerify || !s.followRedirects
+        ? {
+            settings: {
+              ...(!s.sslVerify ? { sslVerify: false } : {}),
+              ...(!s.followRedirects ? { followRedirects: false } : {}),
+            },
+          }
+        : {}),
+      ...(s.assertions.length > 0 ? { assertions: s.assertions } : {}),
     };
   },
 
@@ -521,6 +574,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       postScript: '',
       activeTab: 'params',
       sslVerify: true,
+      followRedirects: true,
+      timeout: null,
+      auth: { type: 'none' },
+      assertions: [],
     };
     set((s) => {
       // Save current tab's state before switching
@@ -610,6 +667,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         postScript: '',
         activeTab: 'params',
         sslVerify: true,
+        followRedirects: true,
+        timeout: null,
+        auth: { type: 'none' },
+        assertions: [],
       };
       updatedSnapshots.set(tabId, freshSnapshot);
       set({
@@ -640,6 +701,50 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     set({ sslVerify });
     get().markDirty();
   },
+
+  setFollowRedirects: (followRedirects) => {
+    set({ followRedirects });
+    get().markDirty();
+  },
+
+  setTimeout: (timeout) => {
+    set({ timeout });
+    get().markDirty();
+  },
+
+  setAuth: (auth) => {
+    set({ auth });
+    get().markDirty();
+  },
+
+  // Assertions (Feature 5)
+  addAssertion: () => {
+    const newRule: AssertionRule = {
+      id: generateId(),
+      subject: 'status',
+      property: '',
+      operator: 'eq',
+      expected: '',
+    };
+    set((s) => ({ assertions: [...s.assertions, newRule] }));
+    get().markDirty();
+  },
+
+  updateAssertion: (id, patch) => {
+    set((s) => ({
+      assertions: s.assertions.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    }));
+    get().markDirty();
+  },
+
+  removeAssertion: (id) => {
+    set((s) => ({
+      assertions: s.assertions.filter((a) => a.id !== id),
+    }));
+    get().markDirty();
+  },
+
+  setAssertionResults: (results) => set({ assertionResults: results }),
 
   getSavePath: () => get().savePath,
   setSavePath: (path) => set({ savePath: path }),

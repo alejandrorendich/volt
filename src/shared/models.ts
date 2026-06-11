@@ -9,6 +9,42 @@
  */
 
 // ---------------------------------------------------------------------------
+// Auth configuration
+// ---------------------------------------------------------------------------
+
+/** No authentication. */
+export interface AuthNone {
+  readonly type: 'none';
+}
+
+/** Bearer token authentication — injects `Authorization: Bearer <token>`. */
+export interface AuthBearer {
+  readonly type: 'bearer';
+  readonly token: string;
+}
+
+/** HTTP Basic authentication — injects `Authorization: Basic <base64(user:pass)>`. */
+export interface AuthBasic {
+  readonly type: 'basic';
+  readonly username: string;
+  readonly password: string;
+}
+
+/**
+ * API key authentication — injects the key as a header or query parameter.
+ */
+export interface AuthApiKey {
+  readonly type: 'apikey';
+  readonly key: string;
+  readonly value: string;
+  /** Whether to inject the key as a header or append it as a query param. */
+  readonly addTo: 'header' | 'query';
+}
+
+/** Discriminated union of all supported auth configuration shapes. */
+export type AuthConfig = AuthNone | AuthBearer | AuthBasic | AuthApiKey;
+
+// ---------------------------------------------------------------------------
 // HTTP primitives
 // ---------------------------------------------------------------------------
 
@@ -44,6 +80,59 @@ export type RequestBody =
 // Core request / response types
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Assertion types (Feature 5 — GUI-based testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Subject of an assertion rule.
+ * - `status`  — HTTP status code
+ * - `time`    — total response time in milliseconds
+ * - `jsonpath` — a value extracted from the JSON body via dot-notation path
+ * - `header`  — a response header value by name
+ */
+export type AssertionSubject = 'status' | 'time' | 'jsonpath' | 'header';
+
+/**
+ * Comparison operator for an assertion rule.
+ */
+export type AssertionOperator = 'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'exists';
+
+/**
+ * A single assertion rule attached to a request.
+ * Evaluated after execution; results are pushed back as `event:assertion-results`.
+ */
+export interface AssertionRule {
+  /** Stable identifier for this rule. */
+  readonly id: string;
+  /** What to inspect in the response. */
+  readonly subject: AssertionSubject;
+  /**
+   * Context-sensitive path/name:
+   * - `jsonpath` → dot-notation path like `"user.id"` or `"data[0].name"`
+   * - `header`   → header name like `"Content-Type"`
+   * - `status` / `time` → ignored (leave empty)
+   */
+  readonly property: string;
+  /** How to compare the actual value to the expected value. */
+  readonly operator: AssertionOperator;
+  /**
+   * Expected value as a string.
+   * Supports `{{variable}}` interpolation (resolved before comparison).
+   */
+  readonly expected: string;
+}
+
+/**
+ * The outcome of evaluating a single assertion rule after a request completes.
+ */
+export interface AssertionResult {
+  readonly id: string;
+  readonly pass: boolean;
+  /** Stringified actual value (for display in the UI). */
+  readonly actual: string;
+}
+
 /**
  * A fully-specified HTTP request definition.
  * Stored as YAML inside `.volt/requests/`.
@@ -69,11 +158,26 @@ export interface HttpRequestDef {
   readonly preScript?: string;
   /** JavaScript code executed AFTER the response is received. */
   readonly postScript?: string;
+  /**
+   * Authentication configuration for this request.
+   * Injected into headers or query params AFTER environment variable interpolation.
+   */
+  readonly auth?: AuthConfig;
+  /**
+   * Request timeout in milliseconds.
+   * When set, overrides the default 30 s timeout.
+   * When null or undefined, the default timeout is used.
+   */
+  readonly timeout?: number;
   /** Per-request settings that override global defaults. */
   readonly settings?: {
     /** When false, TLS certificate verification is disabled for this request. Default: true */
     readonly sslVerify?: boolean;
+    /** When false, 3xx redirects are NOT followed. Default: true */
+    readonly followRedirects?: boolean;
   };
+  /** GUI-based assertion rules evaluated after every execution. */
+  readonly assertions?: readonly AssertionRule[];
 }
 
 /**

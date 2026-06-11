@@ -34,6 +34,7 @@ import type {
   CollectionFolderItem,
   CollectionRequestItem,
   CollectionOrderEntry,
+  AuthConfig,
 } from '../../shared/models';
 import type { ICollectionService } from '../message-router';
 
@@ -66,6 +67,9 @@ interface RawRequestYaml {
   preScript?: unknown;
   postScript?: unknown;
   settings?: unknown;
+  auth?: unknown;
+  timeout?: unknown;
+  assertions?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -700,6 +704,24 @@ function buildRequestYaml(req: HttpRequestDef): string {
     out['settings'] = req.settings;
   }
 
+  if (req.auth !== undefined && req.auth.type !== 'none') {
+    out['auth'] = req.auth;
+  }
+
+  if (req.timeout !== undefined) {
+    out['timeout'] = req.timeout;
+  }
+
+  if (req.assertions && req.assertions.length > 0) {
+    out['assertions'] = req.assertions.map((a) => ({
+      id: a.id,
+      subject: a.subject,
+      property: a.property,
+      operator: a.operator,
+      expected: a.expected,
+    }));
+  }
+
   return yaml.dump(out, { lineWidth: 120, noCompatMode: true });
 }
 
@@ -761,8 +783,67 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
   let settings: HttpRequestDef['settings'];
   if (raw.settings && typeof raw.settings === 'object') {
     const s = raw.settings as Record<string, unknown>;
-    if (typeof s['sslVerify'] === 'boolean') {
-      settings = { sslVerify: s['sslVerify'] };
+    const sslVerify = typeof s['sslVerify'] === 'boolean' ? s['sslVerify'] : undefined;
+    const followRedirects = typeof s['followRedirects'] === 'boolean' ? s['followRedirects'] : undefined;
+    if (sslVerify !== undefined || followRedirects !== undefined) {
+      settings = {
+        ...(sslVerify !== undefined ? { sslVerify } : {}),
+        ...(followRedirects !== undefined ? { followRedirects } : {}),
+      };
+    }
+  }
+
+  // Parse auth configuration
+  let auth: AuthConfig | undefined;
+  if (raw.auth && typeof raw.auth === 'object') {
+    const a = raw.auth as Record<string, unknown>;
+    const authType = a['type'];
+    if (authType === 'bearer' && typeof a['token'] === 'string') {
+      auth = { type: 'bearer', token: a['token'] };
+    } else if (
+      authType === 'basic' &&
+      typeof a['username'] === 'string' &&
+      typeof a['password'] === 'string'
+    ) {
+      auth = { type: 'basic', username: a['username'], password: a['password'] };
+    } else if (
+      authType === 'apikey' &&
+      typeof a['key'] === 'string' &&
+      typeof a['value'] === 'string' &&
+      (a['addTo'] === 'header' || a['addTo'] === 'query')
+    ) {
+      auth = { type: 'apikey', key: a['key'], value: a['value'], addTo: a['addTo'] };
+    }
+  }
+
+  // Parse timeout
+  const timeout: number | undefined =
+    typeof raw.timeout === 'number' && raw.timeout > 0 ? raw.timeout : undefined;
+
+  // Parse assertions
+  const assertions: import('../../shared/models').AssertionRule[] = [];
+  if (Array.isArray(raw.assertions)) {
+    const validSubjects = new Set(['status', 'time', 'jsonpath', 'header']);
+    const validOperators = new Set(['eq', 'neq', 'contains', 'gt', 'lt', 'exists']);
+    for (const a of raw.assertions as unknown[]) {
+      if (a && typeof a === 'object') {
+        const ar = a as Record<string, unknown>;
+        const subject = ar['subject'];
+        const operator = ar['operator'];
+        if (
+          typeof ar['id'] === 'string' &&
+          typeof subject === 'string' && validSubjects.has(subject) &&
+          typeof operator === 'string' && validOperators.has(operator)
+        ) {
+          assertions.push({
+            id: ar['id'],
+            subject: subject as import('../../shared/models').AssertionSubject,
+            property: typeof ar['property'] === 'string' ? ar['property'] : '',
+            operator: operator as import('../../shared/models').AssertionOperator,
+            expected: typeof ar['expected'] === 'string' ? ar['expected'] : '',
+          });
+        }
+      }
     }
   }
 
@@ -772,6 +853,9 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
     ...(preScript ? { preScript } : {}),
     ...(postScript ? { postScript } : {}),
     ...(settings !== undefined ? { settings } : {}),
+    ...(auth !== undefined ? { auth } : {}),
+    ...(timeout !== undefined ? { timeout } : {}),
+    ...(assertions.length > 0 ? { assertions } : {}),
   };
 }
 

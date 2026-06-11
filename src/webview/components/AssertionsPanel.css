@@ -1,0 +1,199 @@
+/**
+ * @fileoverview AssertionsPanel component styles.
+ */
+
+.ap-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+ * Empty state
+ * --------------------------------------------------------------------------- */
+.ap-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-6);
+  color: var(--volt-fg-secondary);
+}
+
+.ap-empty__icon {
+  font-size: 24px;
+  opacity: 0.4;
+}
+
+.ap-empty__text {
+  font-size: var(--volt-font-size-sm);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * List
+ * --------------------------------------------------------------------------- */
+.ap-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: var(--volt-space-2) 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Row
+ * --------------------------------------------------------------------------- */
+.ap-row {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.ap-row:last-child {
+  border-bottom: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Pass/fail indicator
+ * --------------------------------------------------------------------------- */
+.ap-indicator {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 50%;
+  color: var(--volt-fg-secondary);
+  background: var(--volt-bg-elevated);
+  border: 1px solid var(--volt-border-input);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  cursor: default;
+}
+
+.ap-indicator--pass {
+  background: rgba(35, 134, 54, 0.15);
+  color: #3fb950;
+  border-color: rgba(35, 134, 54, 0.4);
+}
+
+.ap-indicator--fail {
+  background: rgba(241, 76, 76, 0.12);
+  color: var(--volt-fg-error, #f14c4c);
+  border-color: rgba(241, 76, 76, 0.4);
+}
+
+/* ---------------------------------------------------------------------------
+ * Selects and inputs
+ * --------------------------------------------------------------------------- */
+.ap-select {
+  background: var(--volt-dropdown-bg, var(--vscode-dropdown-background));
+  color: var(--volt-fg-primary, var(--vscode-foreground));
+  border: 1px solid var(--volt-dropdown-border, var(--vscode-dropdown-border));
+  border-radius: var(--volt-radius-sm, 3px);
+  font-family: var(--volt-font-family, var(--vscode-font-family));
+  font-size: var(--volt-font-size-sm, 11px);
+  padding: 2px var(--volt-space-2, 4px);
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.ap-select:focus-visible {
+  border-color: var(--volt-border-focus, var(--vscode-focusBorder));
+}
+
+.ap-select--subject {
+  min-width: 130px;
+}
+
+.ap-select--operator {
+  min-width: 110px;
+}
+
+.ap-input {
+  background: var(--volt-input-bg, var(--vscode-input-background));
+  color: var(--volt-input-fg, var(--vscode-input-foreground));
+  border: 1px solid var(--volt-border-input, var(--vscode-input-border, transparent));
+  border-radius: var(--volt-radius-sm, 3px);
+  font-family: var(--volt-font-mono, var(--vscode-editor-font-family, monospace));
+  font-size: var(--volt-font-size-sm, 11px);
+  padding: 2px var(--volt-space-2, 4px);
+  outline: none;
+}
+
+.ap-input:focus {
+  border-color: var(--volt-border-focus, var(--vscode-focusBorder));
+}
+
+.ap-input--property {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.ap-input--expected {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Delete button
+ * --------------------------------------------------------------------------- */
+.ap-delete-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  line-height: 1;
+}
+
+.ap-row:hover .ap-delete-btn {
+  opacity: 1;
+}
+
+.ap-delete-btn:hover {
+  color: var(--vscode-errorForeground, #f44747);
+  background: var(--vscode-inputValidation-errorBackground, rgba(244, 71, 71, 0.08));
+}
+
+/* ---------------------------------------------------------------------------
+ * Footer
+ * --------------------------------------------------------------------------- */
+.ap-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: var(--volt-space-3) var(--volt-space-4);
+  border-top: 1px solid var(--volt-border);
+}
+
+.ap-add-btn {
+  background: transparent;
+  border: 1px solid var(--volt-border-input, var(--vscode-input-border, transparent));
+  border-radius: var(--volt-radius-sm, 3px);
+  color: var(--volt-fg-secondary);
+  font-family: var(--volt-font-family, var(--vscode-font-family));
+  font-size: var(--volt-font-size-sm, 11px);
+  padding: var(--volt-space-1, 2px) var(--volt-space-4, 8px);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.ap-add-btn:hover {
+  color: var(--volt-fg-primary, var(--vscode-foreground));
+  border-color: var(--volt-border-focus, var(--vscode-focusBorder));
+  background: var(--volt-bg-hover);
+}

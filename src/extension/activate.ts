@@ -21,6 +21,7 @@ import { HttpService } from './services/http-service';
 import { EnvironmentService } from './services/environment-service';
 import { CollectionService } from './services/collection-service';
 import { HistoryService } from './services/history-service';
+import { CookieService } from './services/cookie-service';
 import { importPostmanCollection } from './services/postman-import';
 import { buildCurlCommand } from './utils/curl';
 
@@ -82,12 +83,16 @@ export function activate(context: vscode.ExtensionContext): void {
     historyService = new HistoryService(output, workspaceRoot);
   }
 
+  // 2e. Cookie Service — in-memory, always available
+  const cookieService = new CookieService(output);
+
   // 3. Message router — all Phase 3+4 services injected
   const router = new MessageRouter(output, {
     http: httpService,
     ...(collectionService ? { collection: collectionService } : {}),
     ...(environmentService ? { environment: environmentService } : {}),
     ...(historyService ? { history: historyService } : {}),
+    cookies: cookieService,
   });
   context.subscriptions.push(router);
   if (environmentService) {
@@ -582,6 +587,72 @@ export function activate(context: vscode.ExtensionContext): void {
         output.appendLine(`[Volt] ERROR in copyAsCurl: ${msg}`);
         await vscode.window.showErrorMessage(`Volt: Failed to copy as cURL — ${msg}`);
       }
+    }),
+  );
+
+  // volt.runCollection — run all requests in a folder sequentially (Feature 7)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.runCollection', async (item: unknown) => {
+      output.appendLine('[Volt] Command: volt.runCollection');
+
+      if (!collectionService) {
+        vscode.window.showWarningMessage('Volt: Open a folder to run a collection.');
+        return;
+      }
+
+      // Item may come from the tree context menu or be undefined (command palette)
+      let folderName: string | undefined;
+      if (item && typeof item === 'object' && 'label' in item) {
+        folderName = String((item as { label: unknown }).label);
+      } else {
+        // Command palette: ask the user to pick a folder
+        const tree = await collectionService.loadTree();
+        const folders = tree.nodes
+          .filter((n) => n.kind === 'folder')
+          .map((n) => n.name);
+
+        if (folders.length === 0) {
+          vscode.window.showWarningMessage('Volt: No folders found in the collection.');
+          return;
+        }
+
+        folderName = await vscode.window.showQuickPick(folders, {
+          placeHolder: 'Select a folder to run',
+          title: 'Volt: Run Collection',
+        });
+      }
+
+      if (!folderName) return;
+
+      const folder = folderName;
+
+      // Open the webview so the runner panel is visible
+      webviewProvider.openPanel();
+
+      // Dispatch the run-collection message through the router
+      router.receive(
+        {
+          type: 'request:run-collection',
+          correlationId: `run-collection-${Date.now()}`,
+          payload: { folder, delay: 0 },
+        },
+        undefined as unknown as vscode.Webview,
+      );
+    }),
+  );
+
+  // volt.clearCookies — clear the in-memory cookie jar (Feature 8)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.clearCookies', () => {
+      output.appendLine('[Volt] Command: volt.clearCookies');
+      router.receive(
+        {
+          type: 'request:clear-cookies',
+          correlationId: `clear-cookies-${Date.now()}`,
+        },
+        undefined as unknown as vscode.Webview,
+      );
+      vscode.window.showInformationMessage('Volt: Cookie jar cleared.');
     }),
   );
 
