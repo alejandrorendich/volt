@@ -299,6 +299,63 @@ export interface ClearCookiesMessage {
   readonly correlationId: CorrelationId;
 }
 
+/**
+ * Fetch an OAuth2 access token via the client_credentials grant.
+ * The host POSTs to `tokenUrl` with form-urlencoded credentials and replies
+ * with `response:oauth2-token`.
+ */
+export interface OAuth2GetTokenMessage {
+  readonly type: 'request:oauth2-get-token';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly tokenUrl: string;
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly scope: string;
+    readonly grantType: 'client_credentials' | 'authorization_code';
+  };
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket messages (webview → host)
+// ---------------------------------------------------------------------------
+
+/**
+ * Open a WebSocket connection to the given URL.
+ * The host replies with `event:ws-connected` on success or `event:ws-error`
+ * on failure. Supports `{{variable}}` interpolation in the URL.
+ */
+export interface WsConnectMessage {
+  readonly type: 'request:ws-connect';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly url: string;
+    readonly headers?: Record<string, string>;
+  };
+}
+
+/**
+ * Send a text frame over the currently open WebSocket connection.
+ * The host pushes back `event:ws-message` (direction: sent) to record the
+ * outbound frame in the message log.
+ */
+export interface WsSendMessage {
+  readonly type: 'request:ws-send';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly message: string;
+  };
+}
+
+/**
+ * Close the currently open WebSocket connection.
+ * The host pushes `event:ws-disconnected` once the socket closes.
+ */
+export interface WsDisconnectMessage {
+  readonly type: 'request:ws-disconnect';
+  readonly correlationId: CorrelationId;
+}
+
 /** All messages originating from the webview. */
 export type HostMessage =
   | ExecuteRequestMessage
@@ -322,7 +379,11 @@ export type HostMessage =
   | ClearHistoryMessage
   | DeleteHistoryEntryMessage
   | RunCollectionMessage
-  | ClearCookiesMessage;
+  | ClearCookiesMessage
+  | OAuth2GetTokenMessage
+  | WsConnectMessage
+  | WsSendMessage
+  | WsDisconnectMessage;
 
 // ---------------------------------------------------------------------------
 // Host → Webview messages  (prefix: `response:*` or `event:*`)
@@ -519,6 +580,92 @@ export interface RunnerCompleteMessage {
   };
 }
 
+/**
+ * Reply to `request:oauth2-get-token`.
+ * On success, `accessToken` contains the fetched bearer token.
+ * On failure, `error` contains a human-readable description.
+ */
+export interface OAuth2TokenResponseMessage {
+  readonly type: 'response:oauth2-token';
+  readonly correlationId: CorrelationId;
+  readonly payload:
+    | { readonly accessToken: string; readonly expiresIn?: number }
+    | { readonly error: string };
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket events (host → webview)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pushed when the WebSocket handshake succeeds and the connection is open.
+ */
+export interface WsConnectedEvent {
+  readonly type: 'event:ws-connected';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly url: string;
+  };
+}
+
+/**
+ * Pushed for every inbound text frame and also echoed back for every
+ * outbound frame (direction: 'sent') so the message log is self-contained.
+ */
+export interface WsMessageEvent {
+  readonly type: 'event:ws-message';
+  readonly correlationId: CorrelationId;
+  readonly payload: import('./models').WsMessage;
+}
+
+/**
+ * Pushed when the WebSocket connection closes (normal or abnormal close).
+ */
+export interface WsDisconnectedEvent {
+  readonly type: 'event:ws-disconnected';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly code: number;
+    readonly reason: string;
+  };
+}
+
+/**
+ * Pushed when a WebSocket error occurs (connection failure, etc.).
+ */
+export interface WsErrorEvent {
+  readonly type: 'event:ws-error';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly message: string;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Server-Sent Events (host → webview)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pushed for every SSE frame received when `Content-Type: text/event-stream`.
+ * The webview appends these to a streaming log instead of a static body view.
+ */
+export interface SseEventMessage {
+  readonly type: 'event:sse-event';
+  readonly correlationId: CorrelationId;
+  readonly payload: import('./models').SseEvent;
+}
+
+/**
+ * Pushed when the SSE stream ends (server close or client abort).
+ */
+export interface SseEndMessage {
+  readonly type: 'event:sse-end';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly reason: string;
+  };
+}
+
 /** All messages originating from the extension host. */
 export type WebviewMessage =
   | ExecuteResponseMessage
@@ -533,4 +680,11 @@ export type WebviewMessage =
   | HistoryResponseMessage
   | AssertionResultMessage
   | RunnerProgressMessage
-  | RunnerCompleteMessage;
+  | RunnerCompleteMessage
+  | OAuth2TokenResponseMessage
+  | WsConnectedEvent
+  | WsMessageEvent
+  | WsDisconnectedEvent
+  | WsErrorEvent
+  | SseEventMessage
+  | SseEndMessage;

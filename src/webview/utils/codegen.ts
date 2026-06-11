@@ -100,6 +100,11 @@ function generateCurl(req: HttpRequestDef): string {
       for (const pair of pairs) {
         parts.push(`--data-urlencode ${escapeShellArg(pair)}`);
       }
+    } else if (req.body.type === 'graphql') {
+      if (!hasHeader(req, 'content-type')) {
+        parts.push(`-H ${escapeShellArg('Content-Type: application/json')}`);
+      }
+      parts.push(`-d ${escapeShellArg(serializeGraphqlBody(req.body.query, req.body.variables, req.body.operationName))}`);
     }
   }
 
@@ -170,6 +175,8 @@ function generateAxios(req: HttpRequestDef): string {
       }
     } else if (req.body.type === 'text') {
       lines.push(`  data: ${JSON.stringify(req.body.content)},`);
+    } else if (req.body.type === 'graphql') {
+      lines.push(`  data: ${serializeGraphqlBody(req.body.query, req.body.variables, req.body.operationName)},`);
     }
   }
 
@@ -229,6 +236,18 @@ function generatePython(req: HttpRequestDef): string {
       lines.push('}');
       lines.push('');
       lines.push(`response = requests.${method}(${url}${headersArg}, data=form_data)`);
+    } else if (req.body.type === 'graphql') {
+      lines.push('payload = {');
+      lines.push(`    'query': ${JSON.stringify(req.body.query)},`);
+      if (req.body.variables.trim()) {
+        lines.push(`    'variables': ${req.body.variables.trim()},`);
+      }
+      if (req.body.operationName) {
+        lines.push(`    'operationName': ${JSON.stringify(req.body.operationName)},`);
+      }
+      lines.push('}');
+      lines.push('');
+      lines.push(`response = requests.${method}(${url}${headersArg}, json=payload)`);
     } else {
       lines.push(`response = requests.${method}(${url}${headersArg})`);
     }
@@ -352,6 +371,7 @@ function getBodyString(req: HttpRequestDef): string | null {
   if (!req.body || req.body.type === 'none') return null;
   if (req.body.type === 'json' || req.body.type === 'text') return req.body.content;
   if (req.body.type === 'form-data') return req.body.content;
+  if (req.body.type === 'graphql') return serializeGraphqlBody(req.body.query, req.body.variables, req.body.operationName);
   return null;
 }
 
@@ -370,10 +390,33 @@ function buildBodyString(req: HttpRequestDef): string | null {
     }).join('&');
     return JSON.stringify(encoded);
   }
+  if (req.body.type === 'graphql') {
+    const json = serializeGraphqlBody(req.body.query, req.body.variables, req.body.operationName);
+    return JSON.stringify(json);
+  }
   return null;
 }
 
 /** Wrap a string in PHP double-quoted syntax. */
 function phpStr(s: string): string {
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * Serialize a GraphQL body into a JSON string payload.
+ * Variables field is parsed if it contains valid JSON; omitted if empty.
+ * OperationName is omitted if empty.
+ */
+function serializeGraphqlBody(query: string, variables: string, operationName: string): string {
+  const payload: Record<string, unknown> = { query };
+  if (variables.trim()) {
+    try {
+      payload['variables'] = JSON.parse(variables) as unknown;
+    } catch {
+      // Invalid JSON — include as raw string so the user can see it
+      payload['variables'] = variables;
+    }
+  }
+  if (operationName) payload['operationName'] = operationName;
+  return JSON.stringify(payload);
 }

@@ -1,0 +1,159 @@
+/**
+ * @fileoverview SsePanel component styles.
+ */
+
+.sse-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--volt-bg-base);
+}
+
+/* ---------------------------------------------------------------------------
+ * Toolbar
+ * --------------------------------------------------------------------------- */
+
+.sse-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-3) var(--volt-space-4);
+  border-bottom: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  flex-shrink: 0;
+}
+
+.sse-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--volt-fg-muted, #888);
+  flex-shrink: 0;
+}
+
+.sse-status-dot--active {
+  background: var(--volt-success, #4caf50);
+  animation: sse-pulse 1s ease-in-out infinite;
+}
+
+@keyframes sse-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.sse-status-label {
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-secondary);
+  flex: 1;
+}
+
+.sse-event-count {
+  font-size: var(--volt-font-size-xs, 11px);
+  color: var(--volt-fg-muted, #888);
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Buttons
+ * --------------------------------------------------------------------------- */
+
+.sse-btn {
+  font-size: var(--volt-font-size-sm);
+  font-weight: 600;
+  padding: var(--volt-space-2) var(--volt-space-3);
+  border: none;
+  border-radius: var(--volt-radius-md);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sse-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sse-btn--stop {
+  background: var(--volt-error, #e05252);
+  color: #fff;
+}
+
+.sse-btn--stop:hover {
+  opacity: 0.85;
+}
+
+.sse-btn--clear {
+  background: var(--volt-bg-hover);
+  color: var(--volt-fg-secondary);
+  border: 1px solid var(--volt-border);
+}
+
+.sse-btn--clear:not(:disabled):hover {
+  background: var(--volt-bg-active);
+}
+
+/* ---------------------------------------------------------------------------
+ * Event log
+ * --------------------------------------------------------------------------- */
+
+.sse-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--volt-space-3) var(--volt-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--volt-space-2);
+}
+
+.sse-log__empty {
+  margin: auto;
+  color: var(--volt-fg-muted, #888);
+  font-size: var(--volt-font-size-sm);
+  text-align: center;
+  padding: var(--volt-space-8, 32px) 0;
+}
+
+/* Individual SSE event */
+.sse-event {
+  background: var(--volt-bg-hover);
+  border: 1px solid var(--volt-border);
+  border-radius: var(--volt-radius-md);
+  padding: var(--volt-space-2) var(--volt-space-3);
+  word-break: break-word;
+}
+
+.sse-event__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  font-size: 10px;
+  color: var(--volt-fg-muted, #888);
+  margin-bottom: 2px;
+}
+
+.sse-event__id {
+  font-family: var(--volt-font-mono);
+  color: var(--volt-accent, #007acc);
+}
+
+.sse-event__type {
+  background: var(--volt-accent-subtle, rgba(0, 122, 204, 0.12));
+  color: var(--volt-accent, #007acc);
+  border-radius: var(--volt-radius-sm, 2px);
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.sse-event__time {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.sse-event__data {
+  margin: 0;
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-primary);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}

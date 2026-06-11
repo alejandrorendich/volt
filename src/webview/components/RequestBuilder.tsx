@@ -15,6 +15,8 @@ import { useRequestStore } from '../stores/request-store';
 import type { RequestState } from '../stores/request-store';
 import { useResponseStore } from '../stores/response-store';
 import { useHistoryStore } from '../stores/history-store';
+import { useWsStore } from '../stores/ws-store';
+import { useSseStore } from '../stores/sse-store';
 import { useMessage } from '../hooks/useMessage';
 import { KeyValueEditor } from './KeyValueEditor';
 import { AssertionsPanel } from './AssertionsPanel';
@@ -44,7 +46,7 @@ const COMMON_HEADERS = [
   'X-Request-Id',
 ];
 
-const BODY_TYPES: Array<RequestBody['type']> = ['none', 'json', 'text', 'form-data', 'binary'];
+const BODY_TYPES: Array<RequestBody['type']> = ['none', 'json', 'text', 'form-data', 'binary', 'graphql'];
 
 const BODY_TYPE_LABELS: Record<RequestBody['type'], string> = {
   none: 'None',
@@ -52,6 +54,7 @@ const BODY_TYPE_LABELS: Record<RequestBody['type'], string> = {
   text: 'Text',
   'form-data': 'Form Data',
   binary: 'Binary',
+  graphql: 'GraphQL',
 };
 
 // ---------------------------------------------------------------------------
@@ -434,8 +437,10 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
         setBody({ type: 'form-data', content: '' });
       } else if (t === 'binary') {
         setBody({ type: 'binary', filePath: '' });
+      } else if (t === 'graphql') {
+        setBody({ type: 'graphql', query: '', variables: '{}', operationName: '' });
       } else {
-        setBody({ type: t, content: (body as { content?: string }).content ?? '' });
+        setBody({ type: t as 'json' | 'text', content: (body as { content?: string }).content ?? '' });
       }
       setJsonError(null);
     },
@@ -482,6 +487,7 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
             onClick={() => {
               if (t === 'none') setBody({ type: 'none' });
               else if (t === 'binary') setBody({ type: 'binary', filePath: (body as { filePath?: string }).filePath ?? '' });
+              else if (t === 'graphql') setBody({ type: 'graphql', query: '', variables: '{}', operationName: '' });
               else setBody({ type: t as 'json' | 'text' | 'form-data', content: '' });
             }}
             aria-pressed={body.type === t}
@@ -533,6 +539,49 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
           onFilePathChange={(fp) => setBody({ type: 'binary', filePath: fp })}
         />
       )}
+
+      {body.type === 'graphql' && (
+        <div className="rb-body-graphql">
+          <div className="rb-body-graphql__field">
+            <label className="rb-body-graphql__label" htmlFor={`${bodyTextareaId}-query`}>Query</label>
+            <textarea
+              id={`${bodyTextareaId}-query`}
+              className="rb-body-graphql__query volt-monospace"
+              value={body.query}
+              onChange={(e) => setBody({ type: 'graphql', query: e.target.value, variables: body.variables, operationName: body.operationName })}
+              placeholder={'query {\n  \n}'}
+              spellCheck={false}
+              rows={12}
+              aria-label="GraphQL query"
+            />
+          </div>
+          <div className="rb-body-graphql__field">
+            <label className="rb-body-graphql__label" htmlFor={`${bodyTextareaId}-vars`}>Variables</label>
+            <textarea
+              id={`${bodyTextareaId}-vars`}
+              className="rb-body-graphql__variables volt-monospace"
+              value={body.variables}
+              onChange={(e) => setBody({ type: 'graphql', query: body.query, variables: e.target.value, operationName: body.operationName })}
+              placeholder={'{\n  \n}'}
+              spellCheck={false}
+              rows={5}
+              aria-label="GraphQL variables (JSON)"
+            />
+          </div>
+          <div className="rb-body-graphql__field">
+            <label className="rb-body-graphql__label" htmlFor={`${bodyTextareaId}-opname`}>Operation Name</label>
+            <input
+              id={`${bodyTextareaId}-opname`}
+              type="text"
+              className="rb-body-graphql__opname"
+              value={body.operationName}
+              onChange={(e) => setBody({ type: 'graphql', query: body.query, variables: body.variables, operationName: e.target.value })}
+              placeholder="Optional — for multi-operation documents"
+              aria-label="GraphQL operation name"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 });
@@ -542,10 +591,12 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
 // ---------------------------------------------------------------------------
 
 /** Short labels used in the Auth tab badge. */
-const AUTH_TYPE_BADGE_LABELS: Record<'bearer' | 'basic' | 'apikey', string> = {
+const AUTH_TYPE_BADGE_LABELS: Record<'bearer' | 'basic' | 'apikey' | 'oauth2' | 'aws', string> = {
   bearer: 'Bearer',
   basic: 'Basic',
   apikey: 'API Key',
+  oauth2: 'OAuth2',
+  aws: 'AWS',
 };
 
 export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement {
@@ -592,9 +643,19 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
 
   const setResponse = useResponseStore((s) => s.setLoading);
 
+  const wsStatus = useWsStore((s) => s.status);
+  const wsSetConnecting = useWsStore((s) => s.setConnecting);
+  const wsReset = useWsStore((s) => s.reset);
+  const sseStartStreaming = useSseStore((s) => s.startStreaming);
+
   const { send } = useMessage();
 
   const correlationIdRef = useRef<string>('');
+
+  // Detect WS mode from the current URL
+  const isWsMode = /^wss?:\/\//i.test(url.trim());
+  const wsConnected = wsStatus === 'connected';
+  const wsConnecting = wsStatus === 'connecting';
 
   // Convert queryParams to KVRow for KeyValueEditor
   const paramRows = queryParams.map((p, i) => ({ id: `param-${i}`, key: p.key, value: p.value, enabled: p.enabled }));
@@ -616,6 +677,34 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   );
 
   const handleSend = useCallback(() => {
+    // WebSocket mode
+    if (isWsMode) {
+      if (wsConnected) {
+        // Disconnect
+        send({
+          type: 'request:ws-disconnect',
+          correlationId: `ws-disconnect-${Date.now()}`,
+        });
+      } else if (!wsConnecting) {
+        // Connect
+        const wsHeaders: Record<string, string> = {};
+        for (const h of headers) {
+          if (h.enabled && h.key.trim() !== '') wsHeaders[h.key.trim()] = h.value;
+        }
+        wsSetConnecting(url.trim());
+        send({
+          type: 'request:ws-connect',
+          correlationId: `ws-connect-${Date.now()}`,
+          payload: {
+            url: url.trim(),
+            ...(Object.keys(wsHeaders).length > 0 ? { headers: wsHeaders } : {}),
+          },
+        });
+      }
+      return;
+    }
+
+    // Normal HTTP (including SSE)
     if (loading) {
       // Cancel — only send the cancel message; do NOT call setLoading here.
       // The host will respond with response:execute-error { code: 'cancelled' }
@@ -634,6 +723,15 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
     const correlationId = `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     correlationIdRef.current = correlationId;
 
+    // Detect SSE: Accept header contains text/event-stream
+    const acceptHeader =
+      requestDef.headers['Accept'] ??
+      requestDef.headers['accept'] ??
+      '';
+    if (acceptHeader.includes('text/event-stream')) {
+      sseStartStreaming();
+    }
+
     setLoading(true, correlationId);
     setResponse();
 
@@ -642,7 +740,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
       correlationId,
       payload: requestDef,
     });
-  }, [loading, activeCorrelationId, send, setLoading, toRequestDef, setResponse]);
+  }, [isWsMode, wsConnected, wsConnecting, loading, activeCorrelationId, send, setLoading, toRequestDef, setResponse, url, headers, wsSetConnecting, sseStartStreaming]);
 
   // Keyboard: Enter in URL sends, Escape cancels
   const handleUrlKeyDown = useCallback(
@@ -716,16 +814,35 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           <UrlInput />
         </div>
 
-        {/* Send / Cancel */}
+        {/* Send / Cancel / WS Connect/Disconnect */}
         <button
           type="button"
-          className={`rb-send${loading ? ' rb-send--cancel' : ''}`}
+          className={`rb-send${(loading || wsConnecting) ? ' rb-send--cancel' : ''}${wsConnected ? ' rb-send--disconnect' : ''}`}
           onClick={handleSend}
-          disabled={!loading && url.trim() === ''}
-          aria-label={loading ? 'Cancel request' : 'Send request'}
-          title={loading ? 'Cancel (Esc)' : 'Send (Enter)'}
+          disabled={
+            isWsMode
+              ? wsConnecting
+              : (!loading && url.trim() === '')
+          }
+          aria-label={
+            isWsMode
+              ? (wsConnected ? 'Disconnect WebSocket' : wsConnecting ? 'Connecting…' : 'Connect WebSocket')
+              : (loading ? 'Cancel request' : 'Send request')
+          }
+          title={
+            isWsMode
+              ? (wsConnected ? 'Disconnect' : 'Connect')
+              : (loading ? 'Cancel (Esc)' : 'Send (Enter)')
+          }
         >
-          {loading ? (
+          {isWsMode ? (
+            wsConnected ? 'Disconnect' : wsConnecting ? (
+              <>
+                <span className="rb-send__spinner" aria-hidden="true" />
+                Connecting…
+              </>
+            ) : 'Connect'
+          ) : loading ? (
             <>
               <span className="rb-send__spinner" aria-hidden="true" />
               Cancel

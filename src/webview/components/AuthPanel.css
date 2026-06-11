@@ -112,3 +112,47 @@
   color: var(--volt-fg-secondary);
   text-align: center;
 }
+
+/* OAuth2 "Get Token" action row */
+.auth-panel__oauth2-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-3);
+  flex-wrap: wrap;
+}
+
+/* Primary action button */
+.auth-panel__btn {
+  background: var(--vscode-button-background, var(--volt-accent));
+  color: var(--vscode-button-foreground, #fff);
+  border: none;
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size-sm);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.auth-panel__btn:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground, var(--volt-accent));
+  opacity: 0.9;
+}
+
+.auth-panel__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Inline error message */
+.auth-panel__error {
+  font-size: var(--volt-font-size-sm);
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* Read-only token display — monospace, slightly muted */
+.auth-panel__input--token {
+  font-family: var(--volt-font-mono);
+  font-size: 11px;
+  color: var(--volt-fg-secondary);
+}

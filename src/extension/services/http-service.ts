@@ -348,6 +348,19 @@ function buildRequestBody(req: HttpRequestDef): { body: string | Buffer | null; 
       return { body: fsSync.readFileSync(fp), contentType: 'application/octet-stream' };
     }
 
+    case 'graphql': {
+      let variables: unknown;
+      try {
+        variables = req.body.variables.trim() ? JSON.parse(req.body.variables) : undefined;
+      } catch {
+        throw new Error('GraphQL body: variables field contains invalid JSON.');
+      }
+      const payload: Record<string, unknown> = { query: req.body.query };
+      if (variables !== undefined) payload['variables'] = variables;
+      if (req.body.operationName) payload['operationName'] = req.body.operationName;
+      return { body: Buffer.from(JSON.stringify(payload), 'utf8'), contentType: 'application/json' };
+    }
+
     default:
       return { body: null, contentType: null };
   }

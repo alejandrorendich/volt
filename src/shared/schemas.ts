@@ -52,10 +52,13 @@ const requestYamlSchema = {
       properties: {
         type: {
           type: 'string',
-          enum: ['json', 'text', 'form-data', 'none', 'binary'],
+          enum: ['json', 'text', 'form-data', 'none', 'binary', 'graphql'],
         },
         content: { type: 'string' },
         filePath: { type: 'string' },
+        query: { type: 'string' },
+        variables: { type: 'string' },
+        operationName: { type: 'string' },
       },
       if: { properties: { type: { enum: ['json', 'text', 'form-data'] } } },
       then: { required: ['content'] },

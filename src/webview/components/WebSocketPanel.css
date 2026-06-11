@@ -1,0 +1,306 @@
+/**
+ * @fileoverview WebSocketPanel component styles.
+ */
+
+.wsp-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--volt-bg-base);
+}
+
+/* ---------------------------------------------------------------------------
+ * Toolbar
+ * --------------------------------------------------------------------------- */
+
+.wsp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-3) var(--volt-space-4);
+  border-bottom: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  flex-shrink: 0;
+}
+
+.wsp-url-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--volt-input-bg);
+  color: var(--volt-fg-primary);
+  border: 1px solid var(--volt-input-border);
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size-sm);
+  padding: var(--volt-space-2) var(--volt-space-3);
+  outline: none;
+}
+
+.wsp-url-input:focus {
+  border-color: var(--volt-border-focus);
+}
+
+.wsp-url-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------------------
+ * Buttons
+ * --------------------------------------------------------------------------- */
+
+.wsp-btn {
+  font-size: var(--volt-font-size-sm);
+  font-weight: 600;
+  padding: var(--volt-space-2) var(--volt-space-4);
+  border: none;
+  border-radius: var(--volt-radius-md);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+.wsp-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wsp-btn--connect {
+  background: var(--volt-accent);
+  color: var(--volt-accent-fg, #fff);
+}
+
+.wsp-btn--connect:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.wsp-btn--disconnect {
+  background: var(--volt-error, #e05252);
+  color: #fff;
+}
+
+.wsp-btn--disconnect:hover {
+  opacity: 0.85;
+}
+
+.wsp-btn--clear {
+  background: var(--volt-bg-hover);
+  color: var(--volt-fg-secondary);
+  border: 1px solid var(--volt-border);
+}
+
+.wsp-btn--clear:not(:disabled):hover {
+  background: var(--volt-bg-active);
+}
+
+.wsp-btn--send {
+  background: var(--volt-accent);
+  color: var(--volt-accent-fg, #fff);
+}
+
+.wsp-btn--send:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------------------
+ * Status bar
+ * --------------------------------------------------------------------------- */
+
+.wsp-status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  font-size: var(--volt-font-size-xs, 11px);
+  border-bottom: 1px solid var(--volt-border);
+  flex-shrink: 0;
+}
+
+.wsp-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.wsp-status--idle .wsp-status-dot,
+.wsp-status--idle {
+  color: var(--volt-fg-muted, #888);
+}
+
+.wsp-status--idle .wsp-status-dot {
+  background: var(--volt-fg-muted, #888);
+}
+
+.wsp-status--connecting .wsp-status-dot {
+  background: #e0a020;
+  animation: wsp-pulse 1s ease-in-out infinite;
+}
+
+.wsp-status--connecting {
+  color: #e0a020;
+}
+
+.wsp-status--connected .wsp-status-dot {
+  background: var(--volt-success, #4caf50);
+}
+
+.wsp-status--connected {
+  color: var(--volt-success, #4caf50);
+}
+
+.wsp-status--disconnected .wsp-status-dot {
+  background: var(--volt-fg-muted, #888);
+}
+
+.wsp-status--disconnected {
+  color: var(--volt-fg-muted, #888);
+}
+
+.wsp-status--error .wsp-status-dot {
+  background: var(--volt-error, #e05252);
+}
+
+.wsp-status--error {
+  color: var(--volt-error, #e05252);
+}
+
+.wsp-status-indicator {
+  display: none;
+}
+
+@keyframes wsp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ---------------------------------------------------------------------------
+ * Message log
+ * --------------------------------------------------------------------------- */
+
+.wsp-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--volt-space-3) var(--volt-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--volt-space-2);
+}
+
+.wsp-log__empty {
+  margin: auto;
+  color: var(--volt-fg-muted, #888);
+  font-size: var(--volt-font-size-sm);
+  text-align: center;
+  padding: var(--volt-space-8, 32px) 0;
+}
+
+/* Individual message */
+.wsp-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--volt-space-2) var(--volt-space-3);
+  border-radius: var(--volt-radius-md);
+  max-width: 92%;
+  word-break: break-word;
+}
+
+.wsp-msg--sent {
+  align-self: flex-end;
+  background: var(--volt-accent-subtle, rgba(0, 122, 204, 0.12));
+  border: 1px solid var(--volt-accent-border, rgba(0, 122, 204, 0.25));
+}
+
+.wsp-msg--received {
+  align-self: flex-start;
+  background: var(--volt-bg-hover);
+  border: 1px solid var(--volt-border);
+}
+
+.wsp-msg__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  font-size: 10px;
+  color: var(--volt-fg-muted, #888);
+}
+
+.wsp-msg__direction--sent {
+  color: var(--volt-accent, #007acc);
+  font-weight: 600;
+}
+
+.wsp-msg__direction--received {
+  color: var(--volt-success, #4caf50);
+  font-weight: 600;
+}
+
+.wsp-msg__timestamp {
+  font-variant-numeric: tabular-nums;
+}
+
+.wsp-msg__data {
+  margin: 0;
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-primary);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* ---------------------------------------------------------------------------
+ * Message input area
+ * --------------------------------------------------------------------------- */
+
+.wsp-input-area {
+  display: flex;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-3) var(--volt-space-4);
+  border-top: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
+.wsp-input-area--disabled {
+  opacity: 0.5;
+}
+
+.wsp-message-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  background: var(--volt-input-bg);
+  color: var(--volt-fg-primary);
+  border: 1px solid var(--volt-input-border);
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size-sm);
+  padding: var(--volt-space-2) var(--volt-space-3);
+  outline: none;
+  line-height: 1.5;
+}
+
+.wsp-message-input:focus {
+  border-color: var(--volt-border-focus);
+}
+
+.wsp-message-input:disabled {
+  cursor: not-allowed;
+}
+
+.wsp-input-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--volt-space-1, 4px);
+  flex-shrink: 0;
+}
+
+.wsp-hint {
+  font-size: 10px;
+  color: var(--volt-fg-muted, #888);
+  white-space: nowrap;
+}

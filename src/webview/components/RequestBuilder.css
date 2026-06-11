@@ -149,6 +149,16 @@
   background: var(--volt-btn-secondary-hover-bg);
 }
 
+/* Disconnect (WS) variant — red/destructive */
+.rb-send--disconnect {
+  background: var(--volt-error, #c72e2e);
+  color: #fff;
+}
+
+.rb-send--disconnect:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
 /* Spinner */
 .rb-send__spinner {
   display: inline-block;
@@ -413,6 +423,72 @@
   gap: var(--volt-space-3);
   color: var(--volt-fg-secondary);
   font-size: var(--volt-font-size-sm);
+}
+
+/* ---------------------------------------------------------------------------
+ * GraphQL body editor
+ * --------------------------------------------------------------------------- */
+.rb-body-graphql {
+  display: flex;
+  flex-direction: column;
+  gap: var(--volt-space-4);
+  padding: var(--volt-space-3) var(--volt-space-5);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.rb-body-graphql__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--volt-space-2);
+}
+
+.rb-body-graphql__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--volt-fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rb-body-graphql__query,
+.rb-body-graphql__variables {
+  background: var(--volt-input-bg);
+  color: var(--volt-input-fg);
+  border: 1px solid var(--volt-border-input);
+  border-radius: var(--volt-radius-md);
+  padding: var(--volt-space-4);
+  resize: vertical;
+  outline: none;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: var(--volt-font-mono);
+}
+
+.rb-body-graphql__query {
+  min-height: 180px;
+}
+
+.rb-body-graphql__variables {
+  min-height: 80px;
+}
+
+.rb-body-graphql__query:focus,
+.rb-body-graphql__variables:focus,
+.rb-body-graphql__opname:focus {
+  border-color: var(--volt-border-focus);
+}
+
+.rb-body-graphql__opname {
+  background: var(--volt-input-bg);
+  color: var(--volt-input-fg);
+  border: 1px solid var(--volt-border-input);
+  border-radius: var(--volt-radius-md);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  outline: none;
+  font-size: var(--volt-font-size);
+  width: 100%;
+  max-width: 360px;
 }
 
 /* Scripts panel */

@@ -120,7 +120,9 @@ export class ScriptRunner {
         url: request.url,
         headers: { ...request.headers },
         body: request.body?.type !== 'none' && request.body?.type !== 'binary'
-          ? (request.body?.content ?? null)
+          ? request.body?.type === 'graphql'
+            ? JSON.stringify({ query: request.body.query, variables: request.body.variables, operationName: request.body.operationName })
+            : (request.body?.content ?? null)
           : null,
       },
       env,

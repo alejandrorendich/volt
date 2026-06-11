@@ -28,6 +28,8 @@ import type {
   HistoryEntry,
 } from '../shared/protocol';
 import type { CookieService } from './services/cookie-service';
+import { WebSocketService } from './services/websocket-service';
+import { SseService } from './services/sse-service';
 
 // ---------------------------------------------------------------------------
 // Service interface stubs (filled by later phases)
@@ -124,9 +126,18 @@ export class MessageRouter implements vscode.Disposable {
   /** Optional callback fired after an import to refresh the tree. */
   treeRefresh?: () => void;
 
+  /** WebSocket service — one connection per panel session. */
+  private wsService: WebSocketService | null = null;
+  /** correlationId of the current WebSocket connect request. */
+  private wsCorrelationId: CorrelationId = '';
+
+  /** SSE service — manages in-flight SSE streams. */
+  private readonly sseService: SseService;
+
   constructor(output: vscode.OutputChannel, services: RouterServices = {}) {
     this.output = output;
     this.services = services;
+    this.sseService = new SseService(output);
   }
 
   // ---------------------------------------------------------------------------
@@ -312,6 +323,22 @@ export class MessageRouter implements vscode.Disposable {
         this.handleClearCookies();
         break;
 
+      case 'request:oauth2-get-token':
+        await this.handleOAuth2GetToken(msg.correlationId, msg.payload);
+        break;
+
+      case 'request:ws-connect':
+        await this.handleWsConnect(msg.correlationId, msg.payload.url, msg.payload.headers);
+        break;
+
+      case 'request:ws-send':
+        this.handleWsSend(msg.payload.message);
+        break;
+
+      case 'request:ws-disconnect':
+        this.handleWsDisconnect();
+        break;
+
       default: {
         // Exhaustiveness guard — TypeScript will error if a new variant is
         // added to HostMessage without being handled here.
@@ -386,6 +413,16 @@ export class MessageRouter implements vscode.Disposable {
 
       // Inject auth headers / query params AFTER interpolation so {{token}} is resolved
       const authedRequest = applyAuth(resolvedRequest);
+
+      // SSE detection: if Accept header contains text/event-stream, stream events instead
+      const acceptHeader =
+        authedRequest.headers['Accept'] ??
+        authedRequest.headers['accept'] ??
+        '';
+      if (acceptHeader.includes('text/event-stream')) {
+        await this.handleSseRequest(correlationId, authedRequest);
+        return;
+      }
 
       // Inject cookies from the cookie jar if available (Feature 8)
       const cookieHeader = this.services.cookies?.getCookies(authedRequest.url) ?? '';
@@ -498,11 +535,13 @@ export class MessageRouter implements vscode.Disposable {
     }
   }
 
-  /** Cancel an in-flight HTTP request. */
+  /** Cancel an in-flight HTTP request or SSE stream. */
   private handleCancelRequest(requestId: string): void {
     if (this.services.http) {
       this.services.http.cancel(requestId);
     }
+    // Also abort any in-flight SSE stream with the same correlationId
+    this.sseService.abort(requestId);
   }
 
   /**
@@ -1228,6 +1267,240 @@ export class MessageRouter implements vscode.Disposable {
   }
 
   // ---------------------------------------------------------------------------
+  // OAuth2 handler
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetch an OAuth2 access token via the `client_credentials` grant flow.
+   * POSTs to `tokenUrl` with application/x-www-form-urlencoded credentials.
+   * Replies with `response:oauth2-token` containing the token or an error.
+   *
+   * Note: `authorization_code` requires a browser redirect and callback server.
+   * Only `client_credentials` is fully automated here. For `authorization_code`,
+   * users should obtain the token externally and paste it into the Access Token
+   * field.
+   */
+  private async handleOAuth2GetToken(
+    correlationId: CorrelationId,
+    payload: {
+      readonly tokenUrl: string;
+      readonly clientId: string;
+      readonly clientSecret: string;
+      readonly scope: string;
+      readonly grantType: 'client_credentials' | 'authorization_code';
+    },
+  ): Promise<void> {
+    if (payload.grantType !== 'client_credentials') {
+      this.sendToWebview({
+        type: 'response:oauth2-token',
+        correlationId,
+        payload: {
+          error:
+            'authorization_code flow requires a browser redirect and callback server. ' +
+            'Obtain the token externally and paste it into the Access Token field.',
+        },
+      });
+      return;
+    }
+
+    try {
+      const { fetch } = await import('undici');
+
+      const body = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: payload.clientId,
+        client_secret: payload.clientSecret,
+        ...(payload.scope ? { scope: payload.scope } : {}),
+      });
+
+      const response = await fetch(payload.tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => response.statusText);
+        this.sendToWebview({
+          type: 'response:oauth2-token',
+          correlationId,
+          payload: { error: `Token endpoint returned ${response.status}: ${text}` },
+        });
+        return;
+      }
+
+      const json = await response.json() as Record<string, unknown>;
+
+      const accessToken = typeof json['access_token'] === 'string' ? json['access_token'] : '';
+      if (!accessToken) {
+        this.sendToWebview({
+          type: 'response:oauth2-token',
+          correlationId,
+          payload: { error: 'Token endpoint did not return an access_token field' },
+        });
+        return;
+      }
+
+      const expiresIn =
+        typeof json['expires_in'] === 'number' ? json['expires_in'] : undefined;
+
+      this.sendToWebview({
+        type: 'response:oauth2-token',
+        correlationId,
+        payload: { accessToken, ...(expiresIn !== undefined ? { expiresIn } : {}) },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.sendToWebview({
+        type: 'response:oauth2-token',
+        correlationId,
+        payload: { error: `Failed to fetch token: ${message}` },
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // SSE handler
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Execute a GET request as a Server-Sent Events stream.
+   * Pushes `event:sse-event` for each parsed SSE frame and `event:sse-end`
+   * when the stream closes. Cancellation uses `request:cancel-http` (same
+   * correlationId) because the webview doesn't distinguish SSE from HTTP.
+   */
+  private async handleSseRequest(
+    correlationId: CorrelationId,
+    request: import('../shared/models').HttpRequestDef,
+  ): Promise<void> {
+    this.output.appendLine(`[MessageRouter] SSE stream starting — ${request.url}`);
+
+    // Build URL with query params (reuse the same buildUrl logic via a minimal wrapper)
+    const queryString = request.queryParams
+      .filter((p) => p.enabled && p.key.trim() !== '')
+      .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+      .join('&');
+
+    const finalUrl = queryString
+      ? (request.url.includes('?') ? `${request.url}&${queryString}` : `${request.url}?${queryString}`)
+      : request.url;
+
+    const rejectUnauthorized = request.settings?.sslVerify !== false;
+
+    await this.sseService.stream(
+      finalUrl,
+      { ...request.headers },
+      correlationId,
+      (sseEvent) => {
+        this.sendToWebview({
+          type: 'event:sse-event',
+          correlationId,
+          payload: sseEvent,
+        });
+      },
+      (reason) => {
+        this.sendToWebview({
+          type: 'event:sse-end',
+          correlationId,
+          payload: { reason },
+        });
+        // Also clear loading state
+        this.sendToWebview({
+          type: 'response:execute-error',
+          correlationId,
+          payload: { message: `SSE stream ended: ${reason}`, code: 'cancelled' },
+        });
+      },
+      rejectUnauthorized,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // WebSocket handlers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Open a WebSocket connection.
+   * Environment variable interpolation is applied to the URL before connecting.
+   */
+  private async handleWsConnect(
+    correlationId: CorrelationId,
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<void> {
+    // Interpolate {{variables}} in the URL
+    const resolvedUrl = this.services.environment?.resolveRequest
+      ? (this.services.environment.resolveRequest({
+          id: '',
+          method: 'GET',
+          url,
+          headers: headers ?? {},
+          queryParams: [],
+        }).url)
+      : url;
+
+    this.wsCorrelationId = correlationId;
+
+    // Dispose previous service if it exists
+    this.wsService?.dispose();
+    this.wsService = new WebSocketService(
+      this.output,
+      // onConnected
+      (connectedUrl: string) => {
+        this.sendToWebview({
+          type: 'event:ws-connected',
+          correlationId,
+          payload: { url: connectedUrl },
+        });
+      },
+      // onMessage
+      (msg) => {
+        this.sendToWebview({
+          type: 'event:ws-message',
+          correlationId,
+          payload: msg,
+        });
+      },
+      // onDisconnected
+      (code: number, reason: string) => {
+        this.sendToWebview({
+          type: 'event:ws-disconnected',
+          correlationId,
+          payload: { code, reason },
+        });
+      },
+      // onError
+      (message: string) => {
+        this.sendToWebview({
+          type: 'event:ws-error',
+          correlationId,
+          payload: { message },
+        });
+      },
+    );
+
+    this.wsService.connect(resolvedUrl, headers);
+  }
+
+  /** Forward a text frame to the open WebSocket. */
+  private handleWsSend(message: string): void {
+    if (!this.wsService) {
+      this.output.appendLine('[MessageRouter] ws-send: no active WebSocket connection');
+      return;
+    }
+    this.wsService.send(message);
+  }
+
+  /** Close the active WebSocket connection. */
+  private handleWsDisconnect(): void {
+    if (!this.wsService) {
+      this.output.appendLine('[MessageRouter] ws-disconnect: no active WebSocket connection');
+      return;
+    }
+    this.wsService.disconnect();
+  }
+
+  // ---------------------------------------------------------------------------
   // Internal send — bypasses queue (used for flushing and error responses)
   // ---------------------------------------------------------------------------
 
@@ -1252,6 +1525,10 @@ export class MessageRouter implements vscode.Disposable {
   dispose(): void {
     this.pendingQueue.length = 0;
     this.webview = undefined;
+    // Clean up WebSocket and SSE services
+    this.wsService?.dispose();
+    this.wsService = null;
+    this.sseService.dispose();
   }
 }
 
@@ -1286,6 +1563,8 @@ function isHostMessage(value: unknown): value is HostMessage {
  * - Bearer:  `Authorization: Bearer <token>`
  * - Basic:   `Authorization: Basic <base64(username:password)>`
  * - API Key: header `<key>: <value>` OR query param `<key>=<value>`
+ * - OAuth2:  `Authorization: Bearer <accessToken>` (uses stored token)
+ * - AWS:     SigV4 — Authorization + X-Amz-Date headers (see aws-sigv4.ts)
  */
 function applyAuth(
   request: import('../shared/models').HttpRequestDef,
@@ -1319,6 +1598,36 @@ function applyAuth(
         const queryParams = [...request.queryParams, extraParam];
         return { ...request, queryParams };
       }
+    }
+
+    case 'oauth2': {
+      // Use the stored access token as a Bearer credential
+      if (!auth.accessToken) return request;
+      const headers = { ...request.headers, Authorization: `Bearer ${auth.accessToken}` };
+      return { ...request, headers };
+    }
+
+    case 'aws': {
+      // AWS SigV4 — sign the request with HMAC-SHA256
+      const { signRequest } = require('./utils/aws-sigv4') as typeof import('./utils/aws-sigv4');
+      const b = request.body;
+      const bodyStr =
+        b && b.type !== 'none' && b.type !== 'binary' && b.type !== 'graphql'
+          ? b.content
+          : '';
+      const signingHeaders = signRequest({
+        method: request.method,
+        url: request.url,
+        headers: request.headers,
+        body: bodyStr,
+        region: auth.region,
+        service: auth.service,
+        accessKeyId: auth.accessKeyId,
+        secretAccessKey: auth.secretAccessKey,
+        ...(auth.sessionToken !== undefined ? { sessionToken: auth.sessionToken } : {}),
+      });
+      const headers = { ...request.headers, ...signingHeaders };
+      return { ...request, headers };
     }
   }
 }

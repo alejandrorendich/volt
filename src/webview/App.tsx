@@ -14,6 +14,8 @@ import { ResponseViewer } from './components/ResponseViewer';
 import { EnvSwitcher } from './components/EnvSwitcher';
 import { TabBar } from './components/TabBar';
 import { CollectionRunner } from './components/CollectionRunner';
+import { WebSocketPanel } from './components/WebSocketPanel';
+import { SsePanel } from './components/SsePanel';
 import { useMessage, postMessageToHost } from './hooks/useMessage';
 import { useSaveRequest } from './hooks/useSaveRequest';
 import { useRequestStore } from './stores/request-store';
@@ -22,6 +24,8 @@ import { useCollectionStore } from './stores/collection-store';
 import { useEnvStore } from './stores/env-store';
 import { useHistoryStore } from './stores/history-store';
 import { useRunnerStore } from './stores/runner-store';
+import { useWsStore } from './stores/ws-store';
+import { useSseStore } from './stores/sse-store';
 import type { WebviewMessage } from '../shared/protocol';
 import './styles/app.css';
 
@@ -41,6 +45,8 @@ function useMessageRouter(): void {
       const requestStore = useRequestStore.getState();
       const historyStore = useHistoryStore.getState();
       const runnerStore = useRunnerStore.getState();
+      const wsStore = useWsStore.getState();
+      const sseStore = useSseStore.getState();
 
       switch (msg.type) {
         case 'response:execute-http':
@@ -60,6 +66,11 @@ function useMessageRouter(): void {
           break;
 
         case 'response:execute-error':
+          // Suppress the "SSE stream ended" fake error from showing in the response panel
+          if (msg.payload.message?.startsWith('SSE stream ended:')) {
+            requestStore.setLoading(false, null);
+            break;
+          }
           responseStore.setError({
             message: msg.payload.message,
             ...(msg.payload.code !== undefined ? { code: msg.payload.code } : {}),
@@ -112,6 +123,9 @@ function useMessageRouter(): void {
             });
             // Reset response panel for fresh context
             responseStore.reset();
+            // Also reset WS + SSE state when loading a new request
+            wsStore.reset();
+            sseStore.reset();
             // Focus URL input after loading
             setTimeout(() => {
               const urlInput = document.querySelector<HTMLInputElement>('.rb-url-input');
@@ -180,6 +194,37 @@ function useMessageRouter(): void {
           });
           break;
 
+        // ---- WebSocket events ----
+
+        case 'event:ws-connected':
+          wsStore.setConnected(msg.payload.url);
+          break;
+
+        case 'event:ws-message':
+          wsStore.addMessage(msg.payload);
+          break;
+
+        case 'event:ws-disconnected':
+          wsStore.setDisconnected(msg.payload.code, msg.payload.reason);
+          requestStore.setLoading(false, null);
+          break;
+
+        case 'event:ws-error':
+          wsStore.setError(msg.payload.message);
+          requestStore.setLoading(false, null);
+          break;
+
+        // ---- SSE events ----
+
+        case 'event:sse-event':
+          sseStore.addEvent(msg.payload);
+          break;
+
+        case 'event:sse-end':
+          sseStore.setEnded(msg.payload.reason);
+          requestStore.setLoading(false, null);
+          break;
+
         default:
           break;
       }
@@ -214,6 +259,31 @@ export function App(): React.ReactElement {
   // Track runner status to know whether to show the runner panel
   const runnerStatus = useRunnerStore((s) => s.status);
 
+  // WebSocket and SSE state — show their panels in the response area
+  const wsStatus = useWsStore((s) => s.status);
+  const sseStatus = useSseStore((s) => s.status);
+  const url = useRequestStore((s) => s.url);
+  const activeCorrelationId = useRequestStore((s) => s.activeCorrelationId);
+  const headers = useRequestStore((s) => s.headers);
+
+  // Detect WS mode: URL starts with ws:// or wss://
+  const isWsMode = /^wss?:\/\//i.test(url.trim());
+  // SSE panel is shown once a stream has started (status transitions from idle)
+  const isSseMode = sseStatus !== 'idle';
+  // WS panel: show when in WS mode OR when a WS session has started
+  const showWsPanel = isWsMode || wsStatus !== 'idle';
+
+  // Build headers map for WS connect (strip disabled/empty rows)
+  const wsHeaders = React.useMemo(() => {
+    const result: Record<string, string> = {};
+    for (const h of headers) {
+      if (h.enabled && h.key.trim() !== '') {
+        result[h.key.trim()] = h.value;
+      }
+    }
+    return result;
+  }, [headers]);
+
   // Resizable split panel
   const splitRef = useRef<HTMLDivElement>(null);
   const [builderWidth, setBuilderWidth] = useState<number | null>(null);
@@ -241,6 +311,14 @@ export function App(): React.ReactElement {
     document.addEventListener('mouseup', onMouseUp);
   }, []);
 
+  // Decide what to render on the right panel
+  const renderRightPanel = (): React.ReactElement => {
+    if (runnerStatus !== 'idle') return <CollectionRunner />;
+    if (showWsPanel) return <WebSocketPanel initialUrl={url} headers={wsHeaders} />;
+    if (isSseMode) return <SsePanel correlationId={activeCorrelationId ?? ''} />;
+    return <ResponseViewer />;
+  };
+
   return (
     <div className="volt-app">
       {/* Header: environment switcher */}
@@ -260,7 +338,7 @@ export function App(): React.ReactElement {
           onMouseDown={handleDividerMouseDown}
         />
         <div className="volt-panel volt-panel--response" style={builderWidth !== null ? { flex: `0 0 ${100 - builderWidth}%` } : undefined}>
-          {runnerStatus !== 'idle' ? <CollectionRunner /> : <ResponseViewer />}
+          {renderRightPanel()}
         </div>
       </div>
     </div>

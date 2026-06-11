@@ -41,8 +41,43 @@ export interface AuthApiKey {
   readonly addTo: 'header' | 'query';
 }
 
+/**
+ * OAuth2 authentication.
+ *
+ * `client_credentials` is the machine-to-machine flow. The `accessToken` field
+ * holds the last fetched token; it is used as `Authorization: Bearer <token>`.
+ *
+ * `authorization_code` is included for UI display purposes. Token exchange
+ * requires a callback server and is not automatically handled — users may
+ * manually paste their access token into the `accessToken` field.
+ */
+export interface AuthOAuth2 {
+  readonly type: 'oauth2';
+  readonly grantType: 'client_credentials' | 'authorization_code';
+  readonly tokenUrl: string;
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly scope: string;
+  /** The last successfully fetched access token. Used as Bearer in requests. */
+  readonly accessToken: string;
+}
+
+/**
+ * AWS Signature Version 4 authentication.
+ * Signs the request with HMAC-SHA256 and injects Authorization + X-Amz-Date headers.
+ * `sessionToken` is optional — used for temporary STS credentials.
+ */
+export interface AuthAws {
+  readonly type: 'aws';
+  readonly accessKeyId: string;
+  readonly secretAccessKey: string;
+  readonly region: string;
+  readonly service: string;
+  readonly sessionToken?: string;
+}
+
 /** Discriminated union of all supported auth configuration shapes. */
-export type AuthConfig = AuthNone | AuthBearer | AuthBasic | AuthApiKey;
+export type AuthConfig = AuthNone | AuthBearer | AuthBasic | AuthApiKey | AuthOAuth2 | AuthAws;
 
 // ---------------------------------------------------------------------------
 // HTTP primitives
@@ -74,6 +109,7 @@ export type RequestBody =
   | { readonly type: 'text'; readonly content: string }
   | { readonly type: 'form-data'; readonly content: string }
   | { readonly type: 'binary'; readonly filePath: string }
+  | { readonly type: 'graphql'; readonly query: string; readonly variables: string; readonly operationName: string }
   | { readonly type: 'none' };
 
 // ---------------------------------------------------------------------------
@@ -178,6 +214,39 @@ export interface HttpRequestDef {
   };
   /** GUI-based assertion rules evaluated after every execution. */
   readonly assertions?: readonly AssertionRule[];
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket / SSE types
+// ---------------------------------------------------------------------------
+
+/**
+ * A single message in a WebSocket session — either sent by the user or
+ * received from the server.
+ */
+export interface WsMessage {
+  /** Stable UUID for this message. */
+  readonly id: string;
+  /** Direction from the client's perspective. */
+  readonly direction: 'sent' | 'received';
+  /** Text payload (binary frames are not supported in V1). */
+  readonly data: string;
+  /** ISO-8601 timestamp captured when the message was sent/received. */
+  readonly timestamp: string;
+}
+
+/**
+ * A single Server-Sent Events frame pushed from the server.
+ */
+export interface SseEvent {
+  /** Optional `id:` field from the SSE stream. */
+  readonly id?: string;
+  /** Optional `event:` field (defaults to `"message"` when absent). */
+  readonly event?: string;
+  /** `data:` field content (may be multi-line, joined with `\n`). */
+  readonly data: string;
+  /** ISO-8601 timestamp of when this event was received. */
+  readonly timestamp: string;
 }
 
 /**

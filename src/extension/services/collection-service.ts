@@ -679,6 +679,13 @@ function buildRequestYaml(req: HttpRequestDef): string {
   if (req.body && req.body.type !== 'none') {
     if (req.body.type === 'binary') {
       out['body'] = { type: req.body.type, filePath: req.body.filePath };
+    } else if (req.body.type === 'graphql') {
+      out['body'] = {
+        type: 'graphql',
+        query: req.body.query,
+        variables: req.body.variables,
+        operationName: req.body.operationName,
+      };
     } else {
       out['body'] = { type: req.body.type, content: req.body.content };
     }
@@ -774,6 +781,13 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
       body = { type, content: typeof b['content'] === 'string' ? b['content'] : '' };
     } else if (type === 'none') {
       body = { type: 'none' };
+    } else if (type === 'graphql') {
+      body = {
+        type: 'graphql',
+        query: typeof b['query'] === 'string' ? b['query'] : '',
+        variables: typeof b['variables'] === 'string' ? b['variables'] : '{}',
+        operationName: typeof b['operationName'] === 'string' ? b['operationName'] : '',
+      };
     }
   }
 
@@ -813,6 +827,37 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
       (a['addTo'] === 'header' || a['addTo'] === 'query')
     ) {
       auth = { type: 'apikey', key: a['key'], value: a['value'], addTo: a['addTo'] };
+    } else if (
+      authType === 'oauth2' &&
+      (a['grantType'] === 'client_credentials' || a['grantType'] === 'authorization_code') &&
+      typeof a['tokenUrl'] === 'string' &&
+      typeof a['clientId'] === 'string' &&
+      typeof a['clientSecret'] === 'string'
+    ) {
+      auth = {
+        type: 'oauth2',
+        grantType: a['grantType'],
+        tokenUrl: a['tokenUrl'],
+        clientId: a['clientId'],
+        clientSecret: a['clientSecret'],
+        scope: typeof a['scope'] === 'string' ? a['scope'] : '',
+        accessToken: typeof a['accessToken'] === 'string' ? a['accessToken'] : '',
+      };
+    } else if (
+      authType === 'aws' &&
+      typeof a['accessKeyId'] === 'string' &&
+      typeof a['secretAccessKey'] === 'string' &&
+      typeof a['region'] === 'string' &&
+      typeof a['service'] === 'string'
+    ) {
+      auth = {
+        type: 'aws',
+        accessKeyId: a['accessKeyId'],
+        secretAccessKey: a['secretAccessKey'],
+        region: a['region'],
+        service: a['service'],
+        ...(typeof a['sessionToken'] === 'string' ? { sessionToken: a['sessionToken'] } : {}),
+      };
     }
   }
 

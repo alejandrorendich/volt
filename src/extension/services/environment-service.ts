@@ -382,7 +382,16 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
     // Interpolate body content (binary bodies are not interpolated)
     let body = request.body;
     if (body && body.type !== 'none' && body.type !== 'binary') {
-      body = { ...body, content: interp(body.content) };
+      if (body.type === 'graphql') {
+        body = {
+          type: 'graphql',
+          query: interp(body.query),
+          variables: interp(body.variables),
+          operationName: interp(body.operationName),
+        };
+      } else {
+        body = { ...body, content: interp(body.content) };
+      }
     }
 
     return {
