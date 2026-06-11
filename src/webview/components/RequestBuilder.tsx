@@ -10,7 +10,7 @@
  * @see REQ-RB-001 through REQ-RB-006
  */
 
-import React, { useCallback, useId, useRef, memo } from 'react';
+import React, { useCallback, useId, useRef, memo, useState } from 'react';
 import { useRequestStore } from '../stores/request-store';
 import { useResponseStore } from '../stores/response-store';
 import { useMessage } from '../hooks/useMessage';
@@ -38,14 +38,114 @@ const COMMON_HEADERS = [
   'X-Request-Id',
 ];
 
-const BODY_TYPES: Array<RequestBody['type']> = ['none', 'json', 'text', 'form-data'];
+const BODY_TYPES: Array<RequestBody['type']> = ['none', 'json', 'text', 'form-data', 'binary'];
 
 const BODY_TYPE_LABELS: Record<RequestBody['type'], string> = {
   none: 'None',
   json: 'JSON',
   text: 'Text',
   'form-data': 'Form Data',
+  binary: 'Binary',
 };
+
+// ---------------------------------------------------------------------------
+// Script editor — pre/post request scripts
+// ---------------------------------------------------------------------------
+
+function ScriptEditor(): React.ReactElement {
+  const preScript = useRequestStore((s) => s.preScript);
+  const postScript = useRequestStore((s) => s.postScript);
+  const setPreScript = useRequestStore((s) => s.setPreScript);
+  const setPostScript = useRequestStore((s) => s.setPostScript);
+  const scriptError = useRequestStore((s) => s.scriptError);
+
+  return (
+    <div className="rb-scripts">
+      {scriptError && (
+        <div className="rb-scripts__error" role="alert" aria-live="assertive">
+          <span className="rb-scripts__error-icon" aria-hidden="true">⚠</span>
+          <div className="rb-scripts__error-body">
+            <span className="rb-scripts__error-phase">
+              {scriptError.phase === 'pre' ? 'Pre-request' : 'Post-request'} script error
+            </span>
+            <span className="rb-scripts__error-message">{scriptError.message}</span>
+          </div>
+        </div>
+      )}
+      <div className="rb-scripts__section">
+        <label className="rb-scripts__label">Pre-request Script</label>
+        <textarea
+          className="rb-scripts__editor"
+          value={preScript}
+          onChange={(e) => setPreScript(e.target.value)}
+          placeholder={`// Runs before the request is sent\n// Available: request, env.get(), env.set(), console.log()`}
+          spellCheck={false}
+          rows={5}
+        />
+      </div>
+      <div className="rb-scripts__section">
+        <label className="rb-scripts__label">Post-request Script</label>
+        <textarea
+          className="rb-scripts__editor"
+          value={postScript}
+          onChange={(e) => setPostScript(e.target.value)}
+          placeholder={`// Runs after the response is received\n// Available: response, json, env.get(), env.set(), console.log()\n\n// Example: save token to environment\n// const data = json;\n// env.set("token", data.access_token);`}
+          spellCheck={false}
+          rows={8}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Save button — shows dirty state, triggers manual save via useSaveRequest hook
+// ---------------------------------------------------------------------------
+
+function SaveButton(): React.ReactElement {
+  const savePath = useRequestStore((s) => s.savePath);
+  const tabs = useRequestStore((s) => s.tabs);
+  const activeTabId = useRequestStore((s) => s.activeTabId);
+  const { send } = useMessage();
+
+  const currentTab = tabs.find((t) => t.tabId === activeTabId);
+  const isDirty = currentTab?.dirty ?? false;
+
+  const handleSave = useCallback(() => {
+    const s = useRequestStore.getState();
+    const def = s.toRequestDef();
+
+    if (!s.savePath) {
+      // No file yet — send with empty path; host will prompt for name
+      send({
+        type: 'request:save-request',
+        correlationId: `save-new-${Date.now()}`,
+        payload: { path: '', request: def },
+      });
+      return;
+    }
+
+    send({
+      type: 'request:save-request',
+      correlationId: `save-${Date.now()}`,
+      payload: { path: s.savePath, request: def },
+    });
+    // markSaved() is NOT called here — it is called in App.tsx when the host
+    // confirms success via response:request-saved (C-03).
+  }, [send]);
+
+  return (
+    <button
+      type="button"
+      className={`rb-save${isDirty || !savePath ? ' rb-save--dirty' : ''}`}
+      onClick={handleSave}
+      aria-label="Save request (Ctrl+S)"
+      title="Save (Ctrl+S)"
+    >
+      {!savePath ? 'Save' : isDirty ? 'Save •' : 'Saved'}
+    </button>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // URL input with {{var}} highlight overlay
@@ -93,6 +193,68 @@ function UrlInput(): React.ReactElement {
 }
 
 // ---------------------------------------------------------------------------
+// Binary body picker (REQ-RB-004)
+// Uses a host-side file picker so the full OS path is available to the
+// extension host when building the request body (C-01).
+// ---------------------------------------------------------------------------
+
+interface BinaryBodyPickerProps {
+  filePath: string;
+  onFilePathChange: (path: string, name: string) => void;
+}
+
+const BinaryBodyPicker = memo(function BinaryBodyPicker({
+  filePath,
+  onFilePathChange,
+}: BinaryBodyPickerProps): React.ReactElement {
+  const { request } = useMessage();
+  const [picking, setPicking] = useState(false);
+
+  const handleChoose = useCallback(async () => {
+    if (picking) return;
+    setPicking(true);
+    try {
+      const correlationId = `pick-binary-${Date.now()}`;
+      const reply = await request({
+        type: 'request:pick-binary-file',
+        correlationId,
+      });
+      if (reply.type === 'response:binary-file-picked' && reply.payload) {
+        onFilePathChange(reply.payload.path, reply.payload.name);
+      }
+    } catch {
+      // User cancelled or timeout — do nothing
+    } finally {
+      setPicking(false);
+    }
+  }, [request, onFilePathChange, picking]);
+
+  // Display just the filename portion for readability
+  const displayName = filePath ? filePath.split(/[\\/]/).pop() ?? filePath : '';
+
+  return (
+    <div className="rb-body-binary">
+      <button
+        type="button"
+        className="rb-body-binary__btn"
+        onClick={() => void handleChoose()}
+        disabled={picking}
+        aria-label="Choose file for binary body"
+      >
+        📂 {picking ? 'Opening…' : 'Choose file'}
+      </button>
+      {displayName ? (
+        <span className="rb-body-binary__path" title={filePath}>
+          {displayName}
+        </span>
+      ) : (
+        <span className="rb-body-binary__placeholder">No file selected</span>
+      )}
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Body editor
 // ---------------------------------------------------------------------------
 
@@ -103,12 +265,12 @@ interface BodyEditorProps {
 const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.ReactElement {
   const body = useRequestStore((s) => s.body);
   const setBody = useRequestStore((s) => s.setBody);
-  const addHeader = useRequestStore((s) => s.addHeader);
-  const updateHeader = useRequestStore((s) => s.updateHeader);
-  const removeHeader = useRequestStore((s) => s.removeHeader);
 
-  // Form-data rows reuse the headers store type
-  const formRows = useRequestStore((s) => s.headers);
+  // Form-data rows are separate from HTTP headers (C-02)
+  const formDataRows = useRequestStore((s) => s.formDataRows);
+  const addFormRow = useRequestStore((s) => s.addFormRow);
+  const updateFormRow = useRequestStore((s) => s.updateFormRow);
+  const removeFormRow = useRequestStore((s) => s.removeFormRow);
 
   const bodyDisabled = BODY_DISABLED_METHODS.includes(method);
   const bodyTextareaId = useId();
@@ -122,6 +284,8 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
         setBody({ type: 'none' });
       } else if (t === 'form-data') {
         setBody({ type: 'form-data', content: '' });
+      } else if (t === 'binary') {
+        setBody({ type: 'binary', filePath: '' });
       } else {
         setBody({ type: t, content: (body as { content?: string }).content ?? '' });
       }
@@ -167,7 +331,11 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
             key={t}
             type="button"
             className={`rb-body-type-btn${body.type === t ? ' rb-body-type-btn--active' : ''}`}
-            onClick={() => setBody(t === 'none' ? { type: 'none' } : { type: t as 'json' | 'text' | 'form-data', content: '' })}
+            onClick={() => {
+              if (t === 'none') setBody({ type: 'none' });
+              else if (t === 'binary') setBody({ type: 'binary', filePath: (body as { filePath?: string }).filePath ?? '' });
+              else setBody({ type: t as 'json' | 'text' | 'form-data', content: '' });
+            }}
             aria-pressed={body.type === t}
           >
             {BODY_TYPE_LABELS[t]}
@@ -202,12 +370,19 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
 
       {body.type === 'form-data' && (
         <KeyValueEditor
-          rows={formRows}
-          onAdd={addHeader}
-          onUpdate={updateHeader}
-          onRemove={removeHeader}
+          rows={formDataRows}
+          onAdd={addFormRow}
+          onUpdate={updateFormRow}
+          onRemove={removeFormRow}
           keyPlaceholder="Field name"
           valuePlaceholder="Value"
+        />
+      )}
+
+      {body.type === 'binary' && (
+        <BinaryBodyPicker
+          filePath={body.filePath}
+          onFilePathChange={(fp) => setBody({ type: 'binary', filePath: fp })}
         />
       )}
     </div>
@@ -228,6 +403,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const activeCorrelationId = useRequestStore((s) => s.activeCorrelationId);
   const url = useRequestStore((s) => s.url);
   const toRequestDef = useRequestStore((s) => s.toRequestDef);
+  const streamingPhase = useRequestStore((s) => s.streamingPhase);
 
   // Headers
   const headers = useRequestStore((s) => s.headers);
@@ -240,6 +416,10 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const addParam = useRequestStore((s) => s.addParam);
   const updateParam = useRequestStore((s) => s.updateParam);
   const removeParam = useRequestStore((s) => s.removeParam);
+  const body = useRequestStore((s) => s.body);
+  const preScript = useRequestStore((s) => s.preScript);
+  const postScript = useRequestStore((s) => s.postScript);
+  const scriptError = useRequestStore((s) => s.scriptError);
 
   const setResponse = useResponseStore((s) => s.setLoading);
 
@@ -268,15 +448,16 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
 
   const handleSend = useCallback(() => {
     if (loading) {
-      // Cancel
+      // Cancel — only send the cancel message; do NOT call setLoading here.
+      // The host will respond with response:execute-error { code: 'cancelled' }
+      // which drives the state transition back to non-loading (H-02).
       if (activeCorrelationId) {
         send({
-          type: 'cancel-request',
+          type: 'request:cancel-http',
           correlationId: `cancel-${Date.now()}`,
           payload: { id: activeCorrelationId },
         });
       }
-      setLoading(false, null);
       return;
     }
 
@@ -288,7 +469,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
     setResponse();
 
     send({
-      type: 'execute-request',
+      type: 'request:execute-http',
       correlationId,
       payload: requestDef,
     });
@@ -309,6 +490,8 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
 
   const enabledHeaderCount = headers.filter((h) => h.enabled && h.key.trim() !== '').length;
   const enabledParamCount = queryParams.filter((p) => p.enabled && p.key.trim() !== '').length;
+  const hasBody = body.type !== 'none';
+  const hasScripts = preScript.trim() !== '' || postScript.trim() !== '';
 
   return (
     <div className="rb-root">
@@ -352,7 +535,18 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
             'Send'
           )}
         </button>
+
+        {/* Save button */}
+        <SaveButton />
       </div>
+
+      {/* Streaming progress indicator (REQ-MSG-003) */}
+      {loading && streamingPhase && (
+        <div className="rb-streaming-indicator" role="status" aria-live="polite">
+          <span className="rb-streaming-indicator__dot" aria-hidden="true" />
+          Receiving data… ({streamingPhase})
+        </div>
+      )}
 
       {/* ---- Tabs row ---- */}
       <div className="rb-tabs" role="tablist" aria-label="Request options">
@@ -384,7 +578,22 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           aria-selected={activeTab === 'body'}
           aria-controls="rb-panel-body"
         >
-          Body
+          Body {hasBody && <span className="rb-badge rb-badge--type">{body.type}</span>}
+        </button>
+        <button
+          role="tab"
+          type="button"
+          className={`rb-tab${activeTab === 'scripts' ? ' rb-tab--active' : ''}`}
+          onClick={() => setActiveTab('scripts')}
+          aria-selected={activeTab === 'scripts'}
+          aria-controls="rb-panel-scripts"
+        >
+          Scripts{' '}
+          {scriptError ? (
+            <span className="rb-badge rb-badge--error" aria-label="Script error">⚠</span>
+          ) : hasScripts ? (
+            <span className="rb-badge">●</span>
+          ) : null}
         </button>
       </div>
 
@@ -433,6 +642,16 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           className="rb-panel"
         >
           <BodyEditor method={method} />
+        </div>
+
+        <div
+          id="rb-panel-scripts"
+          role="tabpanel"
+          aria-label="Pre and post request scripts"
+          hidden={activeTab !== 'scripts'}
+          className="rb-panel"
+        >
+          <ScriptEditor />
         </div>
       </div>
     </div>

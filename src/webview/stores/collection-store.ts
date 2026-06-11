@@ -6,7 +6,7 @@
  */
 
 import { create } from 'zustand';
-import type { CollectionTree } from '../../../shared/models';
+import type { CollectionTree } from '../../shared/models';
 
 // ---------------------------------------------------------------------------
 // State + Actions

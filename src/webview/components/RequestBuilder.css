@@ -164,6 +164,28 @@
   to { transform: rotate(360deg); }
 }
 
+/* Save button */
+.rb-save {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+  cursor: pointer;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+
+.rb-save--dirty {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.rb-save--dirty:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
 /* ---------------------------------------------------------------------------
  * Tabs
  * --------------------------------------------------------------------------- */
@@ -209,6 +231,18 @@
   color: var(--volt-badge-fg);
   font-size: var(--volt-font-size-sm);
   font-weight: 600;
+  padding: 0 var(--volt-space-2);
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.rb-badge--error {
+  background: var(--volt-fg-error, #f14c4c);
+  color: #ffffff;
+  font-size: var(--volt-font-size-sm);
+  font-weight: 700;
   padding: 0 var(--volt-space-2);
   border-radius: 8px;
   min-width: 16px;
@@ -334,4 +368,92 @@
   gap: var(--volt-space-3);
   color: var(--volt-fg-secondary);
   font-size: var(--volt-font-size-sm);
+}
+
+/* Scripts panel */
+.rb-scripts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.rb-scripts__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rb-scripts__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rb-scripts__editor {
+  width: 100%;
+  min-height: 80px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  padding: 8px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.rb-scripts__editor:focus {
+  border-color: var(--vscode-focusBorder);
+  outline: none;
+}
+
+.rb-scripts__editor::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+/* Script error banner */
+.rb-scripts__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--volt-error-bg, rgba(241, 76, 76, 0.12));
+  border: 1px solid var(--volt-fg-error, #f14c4c);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.rb-scripts__error-icon {
+  font-size: 14px;
+  color: var(--volt-fg-error, #f14c4c);
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.rb-scripts__error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rb-scripts__error-phase {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--volt-fg-error, #f14c4c);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.rb-scripts__error-message {
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+  font-size: 12px;
+  color: var(--volt-fg-primary, var(--vscode-foreground));
+  white-space: pre-wrap;
+  word-break: break-word;
 }

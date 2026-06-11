@@ -5,6 +5,11 @@
  * extension host MUST use these typed discriminated unions. Every message
  * travels through `vscode.postMessage` / `window.addEventListener('message')`.
  *
+ * Naming convention (REQ-MSG-001):
+ *   Webview → Host:  `request:*`   (e.g. `request:execute-http`)
+ *   Host → Webview:  `response:*`  (direct reply to a request)
+ *                    `event:*`     (push notification, no request needed)
+ *
  * Design decision: discriminated unions on a `type` string field give
  * exhaustive `switch` type-narrowing at compile time with zero runtime deps.
  *
@@ -22,29 +27,29 @@
 export type CorrelationId = string;
 
 // ---------------------------------------------------------------------------
-// Webview → Host messages (the webview sends these)
+// Webview → Host messages  (prefix: `request:*`)
 // ---------------------------------------------------------------------------
 
 /**
  * Execute an HTTP request. The host resolves environment variables, fires
- * the request via HttpService, and replies with `execute-response` or
- * `execute-error`.
+ * the request via HttpService, and replies with `response:execute-http` or
+ * `response:execute-error`.
  */
 export interface ExecuteRequestMessage {
-  readonly type: 'execute-request';
+  readonly type: 'request:execute-http';
   readonly correlationId: CorrelationId;
   readonly payload: import('./models').HttpRequestDef;
 }
 
 /**
  * Cancel an in-flight HTTP request identified by `id` (the correlationId
- * of the matching `execute-request` message).
+ * of the matching `request:execute-http` message).
  */
 export interface CancelRequestMessage {
-  readonly type: 'cancel-request';
+  readonly type: 'request:cancel-http';
   readonly correlationId: CorrelationId;
   readonly payload: {
-    /** correlationId of the `execute-request` message to cancel */
+    /** correlationId of the `request:execute-http` message to cancel */
     readonly id: string;
   };
 }
@@ -53,7 +58,7 @@ export interface CancelRequestMessage {
  * Persist a request definition to `.volt/requests/<path>.yaml`.
  */
 export interface SaveRequestMessage {
-  readonly type: 'save-request';
+  readonly type: 'request:save-request';
   readonly correlationId: CorrelationId;
   readonly payload: {
     /** Relative path inside `.volt/requests/`, e.g. `auth/login` */
@@ -64,19 +69,19 @@ export interface SaveRequestMessage {
 
 /**
  * Ask the host to load the full collection tree for the active workspace.
- * The host replies with `collection-loaded`.
+ * The host replies with `response:collection`.
  */
 export interface LoadCollectionMessage {
-  readonly type: 'load-collection';
+  readonly type: 'request:get-collection';
   readonly correlationId: CorrelationId;
 }
 
 /**
  * Ask the host to activate a named environment.
- * The host replies with `environment-changed`.
+ * The host replies with `event:environment-changed`.
  */
 export interface SetEnvironmentMessage {
-  readonly type: 'set-environment';
+  readonly type: 'request:set-environment';
   readonly correlationId: CorrelationId;
   readonly payload: {
     /** Environment name matching a file under `.volt/envs/<name>.yaml` */
@@ -89,7 +94,146 @@ export interface SetEnvironmentMessage {
  * The host flushes any queued messages after receiving this.
  */
 export interface WebviewReadyMessage {
-  readonly type: 'webview-ready';
+  readonly type: 'request:ready';
+  readonly correlationId: CorrelationId;
+}
+
+/**
+ * Webview requests the host to save arbitrary text content to a file.
+ * The host opens a save dialog and writes the content.
+ */
+export interface SaveToFileMessage {
+  readonly type: 'request:save-to-file';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Suggested file name (without path) */
+    readonly suggestedName: string;
+    /** Content to write */
+    readonly content: string;
+  };
+}
+
+/**
+ * Webview requests the host to load a specific request by path.
+ * The host replies with `event:load-request` containing the HttpRequestDef.
+ */
+export interface GetRequestMessage {
+  readonly type: 'request:get-request';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Relative path inside `.volt/requests/`, without extension */
+    readonly path: string;
+  };
+}
+
+/**
+ * Webview requests the host to create a new environment.
+ * The host creates the file and replies with `event:environment-changed`.
+ */
+export interface CreateEnvironmentMessage {
+  readonly type: 'request:create-environment';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Name for the new environment (used as filename) */
+    readonly name: string;
+  };
+}
+
+/**
+ * Set or update a single variable in the active environment.
+ * The host calls `updateVariables({ [key]: value })` and replies with
+ * `event:environment-changed`.
+ */
+export interface UpdateEnvVarMessage {
+  readonly type: 'request:update-env-var';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly key: string;
+    readonly value: string;
+  };
+}
+
+/**
+ * Delete a single variable from the active environment.
+ * The host replies with `event:environment-changed`.
+ */
+export interface DeleteEnvVarMessage {
+  readonly type: 'request:delete-env-var';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly key: string;
+  };
+}
+
+/**
+ * Delete an entire environment YAML file.
+ * The host switches to another env (or empty state) and replies with
+ * `event:environment-changed`.
+ */
+export interface DeleteEnvironmentMessage {
+  readonly type: 'request:delete-environment';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly name: string;
+  };
+}
+
+/**
+ * Rename an environment (renames the YAML file).
+ * The host replies with `event:environment-changed`.
+ */
+export interface RenameEnvironmentMessage {
+  readonly type: 'request:rename-environment';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly oldName: string;
+    readonly newName: string;
+  };
+}
+
+/**
+ * Webview asks the host to open a native file picker and return the selected
+ * file path. The host replies with `response:binary-file-picked`.
+ * Used by the BinaryBodyPicker component (C-01).
+ */
+export interface PickBinaryFileMessage {
+  readonly type: 'request:pick-binary-file';
+  readonly correlationId: CorrelationId;
+}
+
+/**
+ * Export a single request to a `.volt-request.json` file.
+ * The host opens a save dialog and writes the self-contained export file.
+ */
+export interface ExportRequestMessage {
+  readonly type: 'request:export-request';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Relative path inside `.volt/requests/`, without extension */
+    readonly path: string;
+  };
+}
+
+/**
+ * Export all requests inside a folder to a `.volt-collection.json` file.
+ * The host opens a save dialog and writes the self-contained export file.
+ */
+export interface ExportFolderMessage {
+  readonly type: 'request:export-folder';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Folder name (top-level directory inside `.volt/requests/`) */
+    readonly folder: string;
+  };
+}
+
+/**
+ * Import a `.volt-request.json` or `.volt-collection.json` file.
+ * The host opens an open dialog, parses the file, and creates the
+ * request(s) in the current collection. No payload needed.
+ */
+export interface ImportMessage {
+  readonly type: 'request:import';
   readonly correlationId: CorrelationId;
 }
 
@@ -100,27 +244,38 @@ export type HostMessage =
   | SaveRequestMessage
   | LoadCollectionMessage
   | SetEnvironmentMessage
-  | WebviewReadyMessage;
+  | WebviewReadyMessage
+  | GetRequestMessage
+  | SaveToFileMessage
+  | CreateEnvironmentMessage
+  | UpdateEnvVarMessage
+  | DeleteEnvVarMessage
+  | DeleteEnvironmentMessage
+  | RenameEnvironmentMessage
+  | PickBinaryFileMessage
+  | ExportRequestMessage
+  | ExportFolderMessage
+  | ImportMessage;
 
 // ---------------------------------------------------------------------------
-// Host → Webview messages (the extension host sends these)
+// Host → Webview messages  (prefix: `response:*` or `event:*`)
 // ---------------------------------------------------------------------------
 
 /**
- * Successful HTTP response from `execute-request`.
+ * Successful HTTP response from `request:execute-http`.
  */
 export interface ExecuteResponseMessage {
-  readonly type: 'execute-response';
+  readonly type: 'response:execute-http';
   readonly correlationId: CorrelationId;
   readonly payload: import('./models').HttpResponseDef;
 }
 
 /**
- * Error response for `execute-request`. Typed error codes let the UI show
- * actionable feedback (e.g. "Check your network" for dns_error).
+ * Error response for `request:execute-http`. Typed error codes let the UI
+ * show actionable feedback (e.g. "Check your network" for dns_error).
  */
 export interface ExecuteErrorMessage {
-  readonly type: 'execute-error';
+  readonly type: 'response:execute-error';
   readonly correlationId: CorrelationId;
   readonly payload: {
     readonly message: string;
@@ -139,20 +294,21 @@ export type ExecuteErrorCode =
   | 'unknown';
 
 /**
- * Full collection tree pushed after `load-collection` or after a file-system
- * change is detected by the FileSystemWatcher.
+ * Full collection tree pushed after `request:get-collection` or after a
+ * file-system change is detected by the FileSystemWatcher.
  */
 export interface CollectionLoadedMessage {
-  readonly type: 'collection-loaded';
+  readonly type: 'response:collection';
   readonly correlationId: CorrelationId;
   readonly payload: import('./models').CollectionTree;
 }
 
 /**
  * Pushed when the active environment changes (user switch or initial load).
+ * This is a push event — no explicit request is needed.
  */
 export interface EnvironmentChangedMessage {
-  readonly type: 'environment-changed';
+  readonly type: 'event:environment-changed';
   readonly correlationId: CorrelationId;
   readonly payload: import('./models').ResolvedEnv;
 }
@@ -162,7 +318,7 @@ export interface EnvironmentChangedMessage {
  * The webview can use these to render a live timing indicator.
  */
 export interface RequestProgressMessage {
-  readonly type: 'request-progress';
+  readonly type: 'event:request-progress';
   readonly correlationId: CorrelationId;
   readonly payload: {
     readonly phase: import('./models').TimingPhase;
@@ -171,10 +327,64 @@ export interface RequestProgressMessage {
   };
 }
 
+/**
+ * Host pushes a saved request definition into the webview builder.
+ * Triggered when the user selects a request in the collection tree.
+ */
+export interface LoadRequestMessage {
+  readonly type: 'event:load-request';
+  readonly correlationId: CorrelationId;
+  readonly payload: import('./models').HttpRequestDef;
+}
+
+/**
+ * Confirmation that a request was saved. Includes the resolved save path
+ * so the webview can update its savePath state (e.g. after a "Save As New").
+ */
+export interface RequestSavedMessage {
+  readonly type: 'response:request-saved';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Relative path in .volt/requests/ where the request was saved */
+    readonly path: string;
+  };
+}
+
+/**
+ * Pushed when a pre- or post-request script fails.
+ * Pre-script errors also produce `response:execute-error`; post-script
+ * errors are non-blocking (the HTTP response is still delivered) but
+ * should be surfaced visually in the Scripts tab.
+ */
+export interface ScriptErrorMessage {
+  readonly type: 'event:script-error';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Which script phase failed */
+    readonly phase: 'pre' | 'post';
+    /** Human-readable error description */
+    readonly message: string;
+  };
+}
+
+/**
+ * Reply to `request:pick-binary-file`. Contains the selected file path and
+ * display name, or `null` if the user cancelled the dialog (C-01).
+ */
+export interface BinaryFilePickedMessage {
+  readonly type: 'response:binary-file-picked';
+  readonly correlationId: CorrelationId;
+  readonly payload: { readonly path: string; readonly name: string } | null;
+}
+
 /** All messages originating from the extension host. */
 export type WebviewMessage =
   | ExecuteResponseMessage
   | ExecuteErrorMessage
   | CollectionLoadedMessage
   | EnvironmentChangedMessage
-  | RequestProgressMessage;
+  | RequestProgressMessage
+  | LoadRequestMessage
+  | RequestSavedMessage
+  | ScriptErrorMessage
+  | BinaryFilePickedMessage;

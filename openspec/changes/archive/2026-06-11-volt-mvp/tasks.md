@@ -72,9 +72,18 @@ Chain strategy: stacked-to-main
 
 ## Phase 6: Integration + Polish (~350 lines)
 
-- [ ] 6.1 Wire end-to-end: RequestBuilder → `request:send-http` → MessageRouter → EnvironmentService interpolates → HttpService executes → `response:send-http` → ResponseViewer renders. Satisfies REQ-MSG-003.
-- [ ] 6.2 Wire collection: tree click → load request into builder, save request → YAML file → tree refresh. Satisfies REQ-COL-001, REQ-COL-002.
-- [ ] 6.3 Implement environment switcher UI (dropdown in webview header) + `event:environment-changed` push. Satisfies REQ-ENV-005, REQ-ENV-006.
-- [ ] 6.4 Implement copy actions: copy body, copy as cURL, save to file. Satisfies REQ-RV-005.
-- [ ] 6.5 Add request tabs support — multiple open requests, unsaved indicator dot, tab switching. Satisfies REQ-RB-007.
-- [ ] 6.6 Error edge cases: message timeout handling, graceful crash recovery, unhandled rejection guards. Satisfies REQ-MSG-002, REQ-MSG-004.
+- [x] 6.1 Wire end-to-end: RequestBuilder → `request:send-http` → MessageRouter → EnvironmentService interpolates → HttpService executes → `response:send-http` → ResponseViewer renders. Satisfies REQ-MSG-003.
+- [x] 6.2 Wire collection: tree click → load request into builder, save request → YAML file → tree refresh. Satisfies REQ-COL-001, REQ-COL-002.
+- [x] 6.3 Implement environment switcher UI (dropdown in webview header) + `event:environment-changed` push. Satisfies REQ-ENV-005, REQ-ENV-006.
+- [x] 6.4 Implement copy actions: copy body, copy as cURL, save to file. Satisfies REQ-RV-005.
+- [x] 6.5 Add request tabs support — multiple open requests, unsaved indicator dot, tab switching. Satisfies REQ-RB-007.
+- [x] 6.6 Error edge cases: message timeout handling, graceful crash recovery, unhandled rejection guards. Satisfies REQ-MSG-002, REQ-MSG-004.
+
+## Phase 7: Verification Fixes — CRITICAL and WARNING issues
+
+- [x] 7.1 CRITICAL-1: Fix 9 TypeScript errors in webview — import path corrections (`../../../shared/*` → `../../shared/*`), `popoverTarget` @ts-expect-error, `useMessage` event listener generic type, `exactOptionalPropertyTypes` fixes for optional code/body.
+- [x] 7.2 CRITICAL-2: Rename all protocol message type strings to REQ-MSG-001 convention (`request:*`, `response:*`, `event:*`). Updated: protocol.ts, message-router.ts, App.tsx, RequestBuilder.tsx, ResponseViewer.tsx, EnvSwitcher.tsx.
+- [x] 7.3 WARNING-1 REQ-RB-007: Implement per-tab state snapshot/restore in request-store. `switchTab` now saves current tab state in `tabSnapshots` Map and restores target tab's snapshot.
+- [x] 7.4 WARNING-2 REQ-RB-004: Add `binary` body type to `RequestBody` in models.ts. Add `BinaryBodyPicker` component with file input. Update collection-service and environment-service for binary type handling.
+- [x] 7.5 WARNING-3 REQ-MSG-003: Wire `event:request-progress` from host. HttpService calls `onProgress` at dns/ttfb/body phases. MessageRouter passes callback. Webview shows "Receiving data… (phase)" indicator via `streamingPhase` in requestStore.
+- [x] 7.6 WARNING-4 REQ-MSG-005: Large body offload — bodies > 5 MB written to temp file in HttpService. `bodyRef: "file:///path"` added to `HttpResponseDef`. ResponseViewer shows "Response too large to display (X MB). Click to save." placeholder when `bodyRef` is present.

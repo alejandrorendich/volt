@@ -1,0 +1,386 @@
+/**
+ * @fileoverview EnvSwitcher styles.
+ */
+
+.env-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.env-switcher__label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.env-switcher__dropdown-wrap {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 200px;
+}
+
+.env-switcher__select {
+  width: 100%;
+  min-width: 100px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border, transparent);
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+  cursor: pointer;
+  outline: none;
+}
+
+.env-switcher__select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.env-switcher__select:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* Variable count badge */
+.env-switcher__vars-wrap {
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* Add environment button */
+.env-switcher__add-btn {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: none;
+  border-radius: 2px;
+  width: 22px;
+  height: 22px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: var(--vscode-font-family);
+}
+
+.env-switcher__add-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.env-switcher__add-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* Inline input for new environment name */
+.env-switcher__input {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--vscode-focusBorder));
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+  width: 100px;
+  outline: none;
+}
+
+.env-switcher__input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.env-switcher__vars-badge {
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border: none;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--vscode-font-family);
+}
+
+.env-switcher__vars-badge:hover {
+  filter: brightness(1.15);
+}
+
+/* Variable preview panel */
+.env-preview {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--vscode-editorHoverWidget-background);
+  border: 1px solid var(--vscode-editorHoverWidget-border);
+  border-radius: 4px;
+  padding: 8px;
+  min-width: 220px;
+  max-width: 360px;
+  max-height: 320px;
+  overflow: auto;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0,0,0,0.3));
+  z-index: 100;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+}
+
+.env-preview__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--vscode-editorHoverWidget-border);
+}
+
+.env-preview__title {
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.env-preview__subtitle {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.env-preview__empty {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.env-preview__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.env-preview__row {
+  border-bottom: 1px solid var(--vscode-editorHoverWidget-border);
+}
+
+.env-preview__row:last-child {
+  border-bottom: none;
+}
+
+.env-preview__key,
+.env-preview__value {
+  padding: 3px 4px;
+  vertical-align: top;
+}
+
+.env-preview__key {
+  color: var(--vscode-symbolIcon-variableForeground, var(--vscode-foreground));
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: nowrap;
+  width: 45%;
+}
+
+.env-preview__value {
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, monospace);
+  word-break: break-all;
+}
+
+.env-preview__masked {
+  color: var(--vscode-descriptionForeground);
+  letter-spacing: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Editable variable panel (env-editor)
+ * --------------------------------------------------------------------------- */
+
+.env-editor {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--vscode-editorHoverWidget-background);
+  border: 1px solid var(--vscode-editorHoverWidget-border);
+  border-radius: 4px;
+  padding: 8px;
+  min-width: 320px;
+  max-width: 480px;
+  max-height: 400px;
+  overflow: auto;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0,0,0,0.3));
+  z-index: 100;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+}
+
+.env-editor__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+
+.env-editor__row {
+  border-bottom: 1px solid var(--vscode-editorHoverWidget-border);
+}
+
+.env-editor__row:last-child {
+  border-bottom: none;
+}
+
+.env-editor__key {
+  color: var(--vscode-symbolIcon-variableForeground, var(--vscode-foreground));
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: nowrap;
+  padding: 3px 4px;
+  width: 38%;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.env-editor__value-cell {
+  padding: 2px 4px;
+  vertical-align: middle;
+}
+
+.env-editor__value-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  padding: 2px 5px;
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  outline: none;
+}
+
+.env-editor__value-input:hover {
+  border-color: var(--vscode-input-border, var(--vscode-focusBorder));
+}
+
+.env-editor__value-input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.env-editor__delete-cell {
+  padding: 2px 2px 2px 4px;
+  vertical-align: middle;
+  width: 20px;
+}
+
+.env-editor__delete-btn {
+  background: transparent;
+  color: var(--vscode-errorForeground, #f44747);
+  border: none;
+  border-radius: 2px;
+  width: 18px;
+  height: 18px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+  font-family: var(--vscode-font-family);
+  padding: 0;
+}
+
+.env-editor__delete-btn:hover {
+  opacity: 1;
+  background: var(--vscode-inputValidation-errorBackground, rgba(244,71,71,0.1));
+}
+
+/* Add variable row */
+.env-editor__add-row {
+  border-top: 1px dashed var(--vscode-editorHoverWidget-border);
+}
+
+.env-editor__add-row .env-editor__key {
+  padding: 4px 4px;
+}
+
+.env-editor__add-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  padding: 2px 5px;
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  outline: none;
+}
+
+.env-editor__add-input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.env-editor__add-input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+  opacity: 0.7;
+}
+
+/* Danger zone — delete environment button */
+.env-editor__danger-zone {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--vscode-editorHoverWidget-border);
+}
+
+.env-editor__delete-env-btn {
+  background: transparent;
+  color: var(--vscode-errorForeground, #f44747);
+  border: 1px solid var(--vscode-errorForeground, #f44747);
+  border-radius: 2px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--vscode-font-family);
+  cursor: pointer;
+  opacity: 0.7;
+  width: 100%;
+}
+
+.env-editor__delete-env-btn:hover {
+  opacity: 1;
+  background: var(--vscode-inputValidation-errorBackground, rgba(244,71,71,0.08));
+}
+
+.env-editor__delete-env-btn--confirming {
+  opacity: 1;
+  background: var(--vscode-errorForeground, #f44747);
+  color: #fff;
+  border-color: var(--vscode-errorForeground, #f44747);
+}
+
+/* Rename input */
+.env-editor__rename-input {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--vscode-font-family);
+  outline: none;
+  width: 120px;
+}
+
+/* Editable title cursor hint */
+.env-preview__title--editable {
+  cursor: pointer;
+}
+
+.env-preview__title--editable:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}

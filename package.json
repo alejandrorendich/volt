@@ -15,17 +15,30 @@
     "workspaceContains:.volt/collection.yaml",
     "onCommand:volt.newRequest",
     "onCommand:volt.openCollection",
+    "onCommand:volt.openPanel",
     "onCommand:volt.sendRequest",
     "onCommand:volt.switchEnvironment",
-    "onCommand:volt.initCollection"
+    "onCommand:volt.initCollection",
+    "onCommand:volt.import",
+    "onCommand:volt.exportRequest",
+    "onCommand:volt.exportFolder",
+    "onCommand:volt.duplicateRequest",
+    "onCommand:volt.duplicateFolder"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
+        "command": "volt.openPanel",
+        "title": "Open Panel",
+        "category": "Volt",
+        "icon": "$(zap)"
+      },
+      {
         "command": "volt.newRequest",
         "title": "New Request",
-        "category": "Volt"
+        "category": "Volt",
+        "icon": "$(add)"
       },
       {
         "command": "volt.openCollection",
@@ -35,7 +48,8 @@
       {
         "command": "volt.sendRequest",
         "title": "Send Request",
-        "category": "Volt"
+        "category": "Volt",
+        "icon": "$(play)"
       },
       {
         "command": "volt.switchEnvironment",
@@ -45,6 +59,11 @@
       {
         "command": "volt.initCollection",
         "title": "Initialize Collection",
+        "category": "Volt"
+      },
+      {
+        "command": "volt.newEnvironment",
+        "title": "New Environment",
         "category": "Volt"
       },
       {
@@ -74,6 +93,56 @@
         "command": "volt.deleteFolder",
         "title": "Delete Folder",
         "category": "Volt"
+      },
+      {
+        "command": "volt.exportRequest",
+        "title": "Export Request",
+        "category": "Volt",
+        "icon": "$(export)"
+      },
+      {
+        "command": "volt.exportFolder",
+        "title": "Export Folder",
+        "category": "Volt",
+        "icon": "$(export)"
+      },
+      {
+        "command": "volt.import",
+        "title": "Import Request or Collection",
+        "category": "Volt",
+        "icon": "$(import)"
+      },
+      {
+        "command": "volt.duplicateRequest",
+        "title": "Duplicate Request",
+        "category": "Volt",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "volt.duplicateFolder",
+        "title": "Duplicate Folder",
+        "category": "Volt",
+        "icon": "$(copy)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "volt.openPanel",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
+        "when": "!voltPanelFocused"
+      },
+      {
+        "command": "volt.sendRequest",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "voltPanelFocused"
+      },
+      {
+        "command": "volt.newRequest",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "when": "voltPanelFocused"
       }
     ],
     "menus": {
@@ -84,7 +153,17 @@
           "group": "navigation"
         },
         {
+          "command": "volt.newRequest",
+          "when": "view == volt.collectionTree",
+          "group": "navigation"
+        },
+        {
           "command": "volt.newFolder",
+          "when": "view == volt.collectionTree",
+          "group": "navigation"
+        },
+        {
+          "command": "volt.import",
           "when": "view == volt.collectionTree",
           "group": "navigation"
         }
@@ -96,14 +175,39 @@
           "group": "inline"
         },
         {
+          "command": "volt.duplicateRequest",
+          "when": "view == volt.collectionTree && viewItem == voltRequest",
+          "group": "edit@1"
+        },
+        {
+          "command": "volt.exportRequest",
+          "when": "view == volt.collectionTree && viewItem == voltRequest",
+          "group": "export@1"
+        },
+        {
           "command": "volt.deleteRequest",
           "when": "view == volt.collectionTree && viewItem == voltRequest",
           "group": "modify"
         },
         {
+          "command": "volt.duplicateFolder",
+          "when": "view == volt.collectionTree && viewItem == voltFolder",
+          "group": "edit@1"
+        },
+        {
+          "command": "volt.exportFolder",
+          "when": "view == volt.collectionTree && viewItem == voltFolder",
+          "group": "export@1"
+        },
+        {
           "command": "volt.deleteFolder",
           "when": "view == volt.collectionTree && viewItem == voltFolder",
           "group": "modify"
+        },
+        {
+          "command": "volt.import",
+          "when": "view == volt.collectionTree",
+          "group": "import@1"
         }
       ]
     },

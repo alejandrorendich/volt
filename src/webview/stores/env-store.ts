@@ -7,7 +7,7 @@
  */
 
 import { create } from 'zustand';
-import type { ResolvedEnv } from '../../../shared/models';
+import type { ResolvedEnv } from '../../shared/models';
 
 // ---------------------------------------------------------------------------
 // State + Actions

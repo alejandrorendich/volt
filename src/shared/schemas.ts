@@ -41,7 +41,7 @@ const requestYamlSchema = {
       type: 'string',
       enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
     },
-    url: { type: 'string', minLength: 1 },
+    url: { type: 'string' },
     headers: {
       type: 'object',
       additionalProperties: { type: 'string' },
@@ -76,6 +76,8 @@ const requestYamlSchema = {
       type: 'object',
       additionalProperties: { type: 'string' },
     },
+    preScript: { type: 'string' },
+    postScript: { type: 'string' },
   },
 } as const;
 

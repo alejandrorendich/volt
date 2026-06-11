@@ -68,6 +68,12 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
   /** FileSystem watcher for env directory changes. */
   private watcher: vscode.FileSystemWatcher | undefined;
 
+  /**
+   * Optional callback invoked after the watcher detects any env file change.
+   * Wire this in `activate.ts` to push an updated environment to the webview.
+   */
+  public onDidChange?: () => void;
+
   constructor(output: vscode.OutputChannel, workspaceRoot: string) {
     this.output = output;
     this.workspaceRoot = workspaceRoot;
@@ -112,6 +118,187 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
 
   async getResolved(): Promise<ResolvedEnv> {
     return this.buildResolved();
+  }
+
+  /**
+   * Get the list of available environment names.
+   */
+  getAvailableNames(): string[] {
+    return Array.from(this.environments.keys()).sort();
+  }
+
+  /**
+   * Get the currently active environment name.
+   */
+  getActiveName(): string {
+    return this.activeName;
+  }
+
+  /**
+   * Create a new environment file at `.volt/envs/{name}.yaml`.
+   * The file is created with an empty variables object.
+   * @param name - Environment name (used as filename and display name).
+   */
+  async createEnvironment(name: string): Promise<void> {
+    const envsDir = path.join(this.workspaceRoot, ENVS_DIR);
+
+    // Ensure envs directory exists
+    if (!fs.existsSync(envsDir)) {
+      fs.mkdirSync(envsDir, { recursive: true });
+    }
+
+    const filePath = path.join(envsDir, `${name}.yaml`);
+
+    if (fs.existsSync(filePath)) {
+      throw new Error(`Environment "${name}" already exists.`);
+    }
+
+    const content = yaml.dump(
+      { name, variables: { baseUrl: 'http://localhost:3000' } },
+      { lineWidth: 120 },
+    );
+
+    fs.writeFileSync(filePath, content, 'utf8');
+    await this.loadAll();
+    this.output.appendLine(`[EnvironmentService] Created environment: ${name}`);
+  }
+
+  /**
+   * Remove a single variable key from the active environment file.
+   * No-op if the key does not exist.
+   */
+  async deleteVariable(key: string): Promise<void> {
+    if (!this.activeName) {
+      throw new Error('No active environment — cannot delete variable.');
+    }
+
+    const envsDir = path.join(this.workspaceRoot, ENVS_DIR);
+    const filePath = path.join(envsDir, `${this.activeName}.yaml`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Environment file not found: ${filePath}`);
+    }
+
+    const raw = yaml.load(fs.readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+
+    if (typeof raw === 'object' && raw !== null) {
+      if (typeof raw['variables'] === 'object' && raw['variables'] !== null) {
+        // Structured format: { name, variables: {...} }
+        delete (raw['variables'] as Record<string, unknown>)[key];
+      } else {
+        // Flat format
+        delete raw[key];
+      }
+    }
+
+    const content = yaml.dump(raw, { lineWidth: 120 });
+    fs.writeFileSync(filePath, content, 'utf8');
+    await this.loadAll();
+    this.output.appendLine(`[EnvironmentService] Deleted variable "${key}" from "${this.activeName}"`);
+  }
+
+  /**
+   * Delete an entire environment YAML file.
+   * After deletion, switches to the first remaining environment (alphabetically),
+   * or clears the active name if no environments remain.
+   */
+  async deleteEnvironment(name: string): Promise<void> {
+    const envsDir = path.join(this.workspaceRoot, ENVS_DIR);
+    const filePath = path.join(envsDir, `${name}.yaml`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Environment file not found: ${filePath}`);
+    }
+
+    fs.unlinkSync(filePath);
+    await this.loadAll();
+    this.output.appendLine(`[EnvironmentService] Deleted environment: ${name}`);
+
+    // Auto-switch to first available, or create a default if none remain (H-04)
+    const remaining = Array.from(this.environments.keys()).sort();
+    if (remaining.length === 0) {
+      await this.createEnvironment('default');
+      this.activeName = 'default';
+      this.output.appendLine('[EnvironmentService] No environments remaining — created default');
+    } else if (this.activeName === name) {
+      this.activeName = remaining[0]!;
+      this.output.appendLine(`[EnvironmentService] Auto-switched to environment: ${this.activeName}`);
+    }
+  }
+
+  /**
+   * Rename an environment (renames the YAML file on disk).
+   * If the renamed environment was active, updates the active name.
+   */
+  async renameEnvironment(oldName: string, newName: string): Promise<void> {
+    if (!/^[a-zA-Z0-9_-]+$/.test(newName)) {
+      throw new Error(`Invalid environment name: "${newName}". Use only letters, numbers, hyphens, underscores.`);
+    }
+
+    const envsDir = path.join(this.workspaceRoot, ENVS_DIR);
+    const oldPath = path.join(envsDir, `${oldName}.yaml`);
+    const newPath = path.join(envsDir, `${newName}.yaml`);
+
+    if (!fs.existsSync(oldPath)) {
+      throw new Error(`Environment "${oldName}" not found.`);
+    }
+    if (fs.existsSync(newPath)) {
+      throw new Error(`Environment "${newName}" already exists.`);
+    }
+
+    // Read, update the name field, and write to new path
+    const raw = yaml.load(fs.readFileSync(oldPath, 'utf8')) as Record<string, unknown>;
+    if (typeof raw === 'object' && raw !== null) {
+      raw['name'] = newName;
+    }
+    fs.writeFileSync(newPath, yaml.dump(raw, { lineWidth: 120 }), 'utf8');
+    fs.unlinkSync(oldPath);
+
+    // Update active if needed
+    if (this.activeName === oldName) {
+      this.activeName = newName;
+    }
+
+    await this.loadAll();
+    this.output.appendLine(`[EnvironmentService] Renamed environment: ${oldName} → ${newName}`);
+  }
+
+  /**
+   * Update (merge) variables into the active environment file.
+   * Used by ScriptRunner to persist env.set() calls from scripts.
+   */
+  async updateVariables(updates: Record<string, string>): Promise<void> {
+    if (!this.activeName) {
+      throw new Error('No active environment — cannot persist variable updates.');
+    }
+
+    const envsDir = path.join(this.workspaceRoot, ENVS_DIR);
+    const filePath = path.join(envsDir, `${this.activeName}.yaml`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Environment file not found: ${filePath}`);
+    }
+
+    // Read current content
+    const raw = yaml.load(fs.readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+
+    if (typeof raw === 'object' && raw !== null) {
+      if (typeof raw['variables'] === 'object' && raw['variables'] !== null) {
+        // Structured format: { name, variables: {...} }
+        Object.assign(raw['variables'] as Record<string, unknown>, updates);
+      } else if (raw['name'] && typeof raw['variables'] === 'undefined') {
+        // Add variables key
+        raw['variables'] = { ...updates };
+      } else {
+        // Flat format: merge at root
+        Object.assign(raw, updates);
+      }
+    }
+
+    const content = yaml.dump(raw, { lineWidth: 120 });
+    fs.writeFileSync(filePath, content, 'utf8');
+    await this.loadAll();
+    this.output.appendLine(`[EnvironmentService] Updated variables in "${this.activeName}": ${Object.keys(updates).join(', ')}`);
   }
 
   // ---------------------------------------------------------------------------
@@ -192,9 +379,9 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
       value: interp(p.value),
     }));
 
-    // Interpolate body content
+    // Interpolate body content (binary bodies are not interpolated)
     let body = request.body;
-    if (body && body.type !== 'none') {
+    if (body && body.type !== 'none' && body.type !== 'binary') {
       body = { ...body, content: interp(body.content) };
     }
 
@@ -382,6 +569,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
     const reload = async () => {
       this.output.appendLine('[EnvironmentService] Env file change detected — reloading');
       await this.loadAll();
+      this.onDidChange?.();
     };
 
     this.watcher.onDidChange(() => void reload());

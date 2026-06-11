@@ -1,0 +1,114 @@
+/**
+ * @fileoverview TabBar styles.
+ */
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--volt-bg-surface));
+  border-bottom: 1px solid var(--volt-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  scrollbar-width: none;
+  min-height: 28px;
+}
+
+.tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-bar__tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--vscode-tab-inactiveForeground, var(--volt-fg-secondary));
+  border: none;
+  border-right: 1px solid var(--volt-border);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--vscode-font-family);
+  white-space: nowrap;
+  max-width: 160px;
+  flex-shrink: 0;
+  height: 100%;
+  min-height: 28px;
+  position: relative;
+  transition: background 0.1s;
+}
+
+.tab-bar__tab:hover {
+  background: var(--vscode-tab-hoverBackground, var(--volt-bg-hover));
+  color: var(--vscode-tab-activeForeground, var(--volt-fg-primary));
+}
+
+.tab-bar__tab--active {
+  background: var(--vscode-tab-activeBackground, var(--volt-bg-base));
+  color: var(--vscode-tab-activeForeground, var(--volt-fg-primary));
+  border-bottom: 2px solid var(--vscode-tab-activeBorderTop, var(--vscode-focusBorder, var(--volt-border)));
+}
+
+/* Unsaved indicator dot */
+.tab-bar__dirty {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vscode-notificationsInfoIcon-foreground, #007acc);
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.tab-bar__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.tab-bar__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--volt-fg-secondary);
+  flex-shrink: 0;
+  cursor: pointer;
+  margin-left: 2px;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.tab-bar__tab:hover .tab-bar__close,
+.tab-bar__tab--active .tab-bar__close {
+  opacity: 1;
+}
+
+.tab-bar__close:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--volt-fg-primary);
+}
+
+/* New tab button */
+.tab-bar__add {
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--volt-fg-secondary);
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  min-height: 28px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.1s;
+}
+
+.tab-bar__add:hover {
+  opacity: 1;
+  color: var(--volt-fg-primary);
+}

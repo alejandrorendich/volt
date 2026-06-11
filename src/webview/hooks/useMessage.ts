@@ -56,7 +56,7 @@ function attachGlobalListener(): void {
   if (globalListenerAttached) return;
   globalListenerAttached = true;
 
-  window.addEventListener('message', (event: MessageEvent<{ data: WebviewMessage }>) => {
+  window.addEventListener('message', (event: MessageEvent<unknown>) => {
     const msg = event.data as WebviewMessage;
     if (!msg || typeof msg !== 'object' || !('type' in msg)) return;
 

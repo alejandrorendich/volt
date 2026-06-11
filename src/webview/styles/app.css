@@ -15,6 +15,30 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * App header — brand + env switcher
+ * --------------------------------------------------------------------------- */
+.volt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--vscode-titleBar-activeBackground, var(--volt-bg-elevated));
+  border-bottom: 1px solid var(--volt-border);
+  min-height: 30px;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.volt-header__brand {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-titleBar-activeForeground, var(--volt-fg-primary));
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+/* ---------------------------------------------------------------------------
  * Split pane
  * --------------------------------------------------------------------------- */
 .volt-split {
@@ -59,4 +83,9 @@
     height: 1px;
     cursor: row-resize;
   }
+
+  .volt-header {
+    flex-wrap: wrap;
+  }
 }
+

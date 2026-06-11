@@ -158,10 +158,10 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
 
     // VS Code webview URIs for the built assets
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'index.js'),
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'webview.js'),
     );
     const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'index.css'),
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview', 'webview.css'),
     );
 
     const csp = [

@@ -22,6 +22,10 @@
 
 import { request as undiciRequest, Agent } from 'undici';
 import * as diagnosticsChannel from 'diagnostics_channel';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import type { IHttpService } from '../message-router';
 import type { HttpRequestDef, HttpResponseDef, TimingBreakdown } from '../../shared/models';
 import type { CorrelationId, ExecuteErrorCode } from '../../shared/protocol';
@@ -35,6 +39,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_REDIRECTS = 10;
 /** 50 MB in bytes */
 const DEFAULT_BODY_SIZE_LIMIT = 50 * 1024 * 1024;
+/** 5 MB threshold — bodies larger than this are offloaded to a temp file (REQ-MSG-005) */
+const LARGE_BODY_THRESHOLD = 5 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Public options / error types
@@ -93,6 +99,12 @@ export class HttpService implements IHttpService, vscode.Disposable {
   private readonly output: vscode.OutputChannel;
   /** Map of correlationId → AbortController for in-flight requests. */
   private readonly inFlight = new Map<string, AbortController>();
+  /**
+   * Simple async mutex — serialises HTTP execution so that the global
+   * `undici:*` diagnostics channels never receive events from two concurrent
+   * requests at the same time (C-04).
+   */
+  private executionQueue: Promise<void> = Promise.resolve();
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -105,21 +117,34 @@ export class HttpService implements IHttpService, vscode.Disposable {
   async execute(
     requestDef: HttpRequestDef,
     correlationId: CorrelationId,
+    onProgress?: (phase: import('../../shared/models').TimingPhase, elapsed: number) => void,
     options: HttpRequestOptions = {},
   ): Promise<HttpResponseDef> {
-    const result = await this.executeWithResult(requestDef, correlationId, options);
-    if (result.type === 'error') {
-      const err = new Error(result.message);
-      (err as NodeJS.ErrnoException).code = result.code;
-      throw err;
-    }
-    return result.response;
+    // Serialise execution through the queue so concurrent requests never
+    // cross-contaminate the global undici diagnostics channels (C-04).
+    return new Promise<HttpResponseDef>((resolve, reject) => {
+      this.executionQueue = this.executionQueue.then(async () => {
+        try {
+          const result = await this.executeWithResult(requestDef, correlationId, onProgress, options);
+          if (result.type === 'error') {
+            const err = new Error(result.message);
+            (err as NodeJS.ErrnoException).code = result.code;
+            reject(err);
+          } else {
+            resolve(result.response);
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
   }
 
   /** Lower-level variant — returns a discriminated result instead of throwing. */
   async executeWithResult(
     requestDef: HttpRequestDef,
     correlationId: CorrelationId,
+    onProgress?: (phase: import('../../shared/models').TimingPhase, elapsed: number) => void,
     options: HttpRequestOptions = {},
   ): Promise<HttpExecuteResult> {
     const {
@@ -127,7 +152,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
       followRedirects = true,
       maxRedirects = DEFAULT_MAX_REDIRECTS,
       bodySizeLimit = DEFAULT_BODY_SIZE_LIMIT,
-      rejectUnauthorized = true,
+      rejectUnauthorized = false,
     } = options;
 
     // Build final URL with enabled query params
@@ -174,6 +199,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
       }
 
       timingAcc.sendStart = performance.now();
+      onProgress?.('dns', 0);
 
       const resp = await undiciRequest(url, {
         method: requestDef.method,
@@ -188,6 +214,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
       } as Parameters<typeof undiciRequest>[1]);
 
       timingAcc.responseStart = performance.now();
+      onProgress?.('ttfb', performance.now() - wallStart);
 
       // Collect response body with size limit
       const { body: bodyString, bodySize, truncated } = await consumeBody(
@@ -196,6 +223,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
       );
 
       timingAcc.responseEnd = performance.now();
+      onProgress?.('body', performance.now() - wallStart);
       const wallEnd = performance.now();
 
       const timing = buildTimingBreakdown(timingAcc, wallStart, wallEnd);
@@ -203,19 +231,35 @@ export class HttpService implements IHttpService, vscode.Disposable {
       // Normalise headers (undici may return arrays for multi-value headers)
       const responseHeaders = normaliseHeaders(resp.headers as Record<string, string | string[]>);
 
+      // REQ-MSG-005: Offload large bodies (> 5 MB) to a temp file
+      let finalBody = bodyString;
+      let bodyRef: string | undefined;
+      if (bodySize > LARGE_BODY_THRESHOLD) {
+        try {
+          const tmpFile = path.join(os.tmpdir(), `volt-resp-${correlationId}.txt`);
+          await fs.writeFile(tmpFile, bodyString, 'utf8');
+          bodyRef = `file:///${tmpFile.replace(/\\/g, '/')}`;
+          finalBody = '';
+          this.output.appendLine(`[HttpService] Large body (${bodySize} bytes) offloaded to ${tmpFile}`);
+        } catch (fsErr: unknown) {
+          this.output.appendLine(`[HttpService] WARN: failed to write body ref — ${String(fsErr)}`);
+        }
+      }
+
       const response: HttpResponseDef = {
         requestId: requestDef.id,
         status: resp.statusCode,
         statusText: statusTextFor(resp.statusCode),
         headers: responseHeaders,
-        body: bodyString,
+        body: finalBody,
         bodySize,
         timing,
         ...(truncated ? { truncated: true } : {}),
+        ...(bodyRef !== undefined ? { bodyRef } : {}),
       };
 
       this.output.appendLine(
-        `[HttpService] ${resp.statusCode} in ${timing.total.toFixed(1)}ms (body: ${bodySize} bytes${truncated ? ', truncated' : ''})`,
+        `[HttpService] ${resp.statusCode} in ${timing.total.toFixed(1)}ms (body: ${bodySize} bytes${truncated ? ', truncated' : ''}${bodyRef ? ', ref' : ''})`,
       );
 
       return { type: 'success', response };
@@ -347,12 +391,18 @@ function subscribeToTimingChannels(acc: TimingAccumulator): () => void {
 // ---------------------------------------------------------------------------
 
 function buildUrl(req: HttpRequestDef): string {
-  const enabledParams = req.queryParams.filter((p) => p.enabled && p.key.trim() !== '');
-  if (enabledParams.length === 0) {
-    return req.url;
+  // Auto-prepend https:// for URLs that have no scheme (H-03)
+  let rawUrl = req.url;
+  if (!/^https?:\/\//i.test(rawUrl)) {
+    rawUrl = 'https://' + rawUrl;
   }
 
-  const urlObj = new URL(req.url);
+  const enabledParams = req.queryParams.filter((p) => p.enabled && p.key.trim() !== '');
+  if (enabledParams.length === 0) {
+    return rawUrl;
+  }
+
+  const urlObj = new URL(rawUrl);
   for (const p of enabledParams) {
     urlObj.searchParams.append(p.key, p.value);
   }
@@ -385,6 +435,17 @@ function buildRequestBody(req: HttpRequestDef): { body: string | Buffer | null; 
         }
       }
       return { body: params.toString(), contentType: 'application/x-www-form-urlencoded' };
+    }
+
+    case 'binary': {
+      const fp = req.body.filePath;
+      if (!fp) {
+        throw new Error('Binary body: no file path specified. Use the file picker to select a file.');
+      }
+      if (!fsSync.existsSync(fp)) {
+        throw new Error(`Binary body: file not found — ${fp}`);
+      }
+      return { body: fsSync.readFileSync(fp), contentType: 'application/octet-stream' };
     }
 
     default:

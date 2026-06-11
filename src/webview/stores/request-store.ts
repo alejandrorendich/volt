@@ -3,11 +3,15 @@
  *
  * Holds the mutable draft of the HTTP request the user is building in the
  * RequestBuilder UI. Separate from the persisted YAML file; saving is an
- * explicit action that sends a `save-request` message to the host.
+ * explicit action that sends a `request:save-request` message to the host.
+ *
+ * Also manages the multi-tab state: each tab is an independent request draft.
+ * REQ-RB-007 — multiple open requests with unsaved indicator; tab state is
+ * snapshotted when switching away and restored when switching back.
  */
 
 import { create } from 'zustand';
-import type { HttpMethod, RequestBody, QueryParam } from '../../../shared/models';
+import type { HttpMethod, RequestBody, QueryParam } from '../../shared/models';
 
 // ---------------------------------------------------------------------------
 // Header row (with enabled toggle)
@@ -20,6 +24,48 @@ export interface HeaderRow {
   readonly enabled: boolean;
 }
 
+/** A single form-data field row — same shape as HeaderRow, separate store. */
+export interface FormDataRow {
+  readonly id: string;
+  readonly key: string;
+  readonly value: string;
+  readonly enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Tab
+// ---------------------------------------------------------------------------
+
+export interface RequestTab {
+  /** Stable tab identifier. */
+  readonly tabId: string;
+  /** Display name for the tab (e.g. "POST /login"). */
+  name: string;
+  /** Whether this tab has unsaved changes. */
+  dirty: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Per-tab snapshot — captures the full mutable request state for a tab
+// (REQ-RB-007)
+// ---------------------------------------------------------------------------
+
+export interface TabSnapshot {
+  id: string;
+  name: string;
+  savePath: string | null;
+  method: HttpMethod;
+  url: string;
+  baseUrl: string;
+  headers: HeaderRow[];
+  formDataRows: FormDataRow[];
+  body: RequestBody;
+  queryParams: QueryParam[];
+  preScript: string;
+  postScript: string;
+  activeTab: 'params' | 'headers' | 'body' | 'scripts';
+}
+
 // ---------------------------------------------------------------------------
 // Request store state
 // ---------------------------------------------------------------------------
@@ -27,20 +73,46 @@ export interface HeaderRow {
 export interface RequestState {
   /** Stable request ID (correlationId anchor). */
   id: string;
+  /** Display name for the request. */
+  name: string;
+  /** Relative file path in .volt/requests/ (without extension). Null if unsaved. */
+  savePath: string | null;
   method: HttpMethod;
   /** URL template — may contain {{variable}} placeholders. */
   url: string;
   /** Base URL without query params (derived from `url`). */
   baseUrl: string;
   headers: HeaderRow[];
+  /** Rows for the form-data body editor (separate from HTTP headers). */
+  formDataRows: FormDataRow[];
   body: RequestBody;
   queryParams: QueryParam[];
+  /** Pre-request script (JavaScript). */
+  preScript: string;
+  /** Post-request script (JavaScript). */
+  postScript: string;
   /** Active sub-tab in the builder panels. */
-  activeTab: 'params' | 'headers' | 'body';
+  activeTab: 'params' | 'headers' | 'body' | 'scripts';
   /** Whether a request is currently in-flight. */
   loading: boolean;
   /** CorrelationId of the active in-flight request (for cancel). */
   activeCorrelationId: string | null;
+
+  // Multi-tab state (REQ-RB-007)
+  /** List of open request tabs. */
+  tabs: RequestTab[];
+  /** ID of the currently active tab. */
+  activeTabId: string;
+  /** Per-tab state snapshots — keyed by tabId. */
+  tabSnapshots: Map<string, TabSnapshot>;
+
+  // Streaming progress (REQ-MSG-003)
+  /** Current streaming phase label, or null when idle. */
+  streamingPhase: string | null;
+
+  // Script error feedback
+  /** Non-null when the last pre/post script execution failed. Cleared on new request. */
+  scriptError: { phase: 'pre' | 'post'; message: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +130,11 @@ export interface RequestActions {
   updateHeader: (id: string, patch: Partial<Pick<HeaderRow, 'key' | 'value' | 'enabled'>>) => void;
   removeHeader: (id: string) => void;
 
+  // Form-data rows (separate from HTTP headers — C-02)
+  addFormRow: () => void;
+  updateFormRow: (id: string, patch: Partial<Pick<FormDataRow, 'key' | 'value' | 'enabled'>>) => void;
+  removeFormRow: (id: string) => void;
+
   // Query params
   addParam: () => void;
   updateParam: (index: number, patch: Partial<QueryParam>) => void;
@@ -66,11 +143,36 @@ export interface RequestActions {
   // Body
   setBody: (body: RequestBody) => void;
 
+  // Scripts
+  setPreScript: (script: string) => void;
+  setPostScript: (script: string) => void;
+
   // Load a full request (e.g. from collection tree click)
-  loadRequest: (patch: Partial<Omit<RequestState, 'activeTab' | 'loading' | 'activeCorrelationId'>>) => void;
+  loadRequest: (patch: Partial<Omit<RequestState, 'activeTab' | 'loading' | 'activeCorrelationId' | 'tabs' | 'activeTabId' | 'tabSnapshots' | 'streamingPhase'>>) => void;
 
   /** Build the final HttpRequestDef for sending. */
-  toRequestDef: () => import('../../../shared/models').HttpRequestDef;
+  toRequestDef: () => import('../../shared/models').HttpRequestDef;
+
+  // Tab management (REQ-RB-007)
+  addTab: () => void;
+  closeTab: (tabId: string) => void;
+  switchTab: (tabId: string) => void;
+  markDirty: () => void;
+
+  // Streaming (REQ-MSG-003)
+  setStreamingPhase: (phase: string | null) => void;
+
+  // Script error feedback
+  /** Set a script error to show in the Scripts tab. Pass null to clear. */
+  setScriptError: (error: { phase: 'pre' | 'post'; message: string } | null) => void;
+
+  // Save
+  /** Get the savePath for the current request. */
+  getSavePath: () => string | null;
+  /** Set the savePath after the request is associated with a file. */
+  setSavePath: (path: string) => void;
+  /** Mark as saved (clears dirty flag). */
+  markSaved: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,14 +205,76 @@ function parseUrlParams(url: string): { baseUrl: string; params: QueryParam[] } 
   }
 }
 
+/**
+ * Encode a query-param key or value, but skip encoding for template variable
+ * references like `{{baseUrl}}` — they will be resolved at execution time.
+ */
+function encodeParam(s: string): string {
+  if (/\{\{[a-zA-Z0-9_-]+\}\}/.test(s)) return s;
+  return encodeURIComponent(s);
+}
+
 /** Rebuild the URL from baseUrl + queryParams. */
 function buildUrl(baseUrl: string, params: QueryParam[]): string {
   const enabled = params.filter((p) => p.enabled && p.key.trim() !== '');
   if (enabled.length === 0) return baseUrl;
   const qs = enabled
-    .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+    .map((p) => `${encodeParam(p.key)}=${encodeParam(p.value)}`)
     .join('&');
   return `${baseUrl}?${qs}`;
+}
+
+/** Derive a short display name for a tab from name, method + URL. */
+function deriveTabName(method: HttpMethod, url: string, name?: string): string {
+  if (name) return name;
+  if (!url.trim()) return `${method} (new)`;
+  try {
+    const u = new URL(url);
+    return `${method} ${u.pathname}`;
+  } catch {
+    // Not a fully-qualified URL — just show last segment
+    const segments = url.split('/').filter(Boolean);
+    const last = segments.at(-1) ?? url;
+    return `${method} /${last.slice(0, 20)}`;
+  }
+}
+
+/** Capture current request fields as a snapshot for a tab. */
+function captureSnapshot(s: RequestState): TabSnapshot {
+  return {
+    id: s.id,
+    name: s.name,
+    savePath: s.savePath,
+    method: s.method,
+    url: s.url,
+    baseUrl: s.baseUrl,
+    headers: s.headers,
+    formDataRows: s.formDataRows,
+    body: s.body,
+    queryParams: s.queryParams,
+    preScript: s.preScript,
+    postScript: s.postScript,
+    activeTab: s.activeTab,
+  };
+}
+
+/** Restore request fields from a snapshot. */
+function applySnapshot(snapshot: TabSnapshot): Partial<RequestState> {
+  return {
+    id: snapshot.id,
+    name: snapshot.name,
+    savePath: snapshot.savePath,
+    method: snapshot.method,
+    url: snapshot.url,
+    baseUrl: snapshot.baseUrl,
+    headers: snapshot.headers,
+    formDataRows: snapshot.formDataRows,
+    body: snapshot.body,
+    queryParams: snapshot.queryParams,
+    preScript: snapshot.preScript,
+    postScript: snapshot.postScript,
+    activeTab: snapshot.activeTab,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -119,26 +283,56 @@ function buildUrl(baseUrl: string, params: QueryParam[]): string {
 
 export type RequestStore = RequestState & RequestActions;
 
-export const useRequestStore = create<RequestStore>((set, get) => ({
-  // Initial state
+const initialTabId = generateId();
+
+const INITIAL_SNAPSHOT: TabSnapshot = {
   id: generateId(),
+  name: '',
+  savePath: null,
   method: 'GET',
   url: '',
   baseUrl: '',
-  headers: [{ id: generateId(), key: '', value: '', enabled: true }],
+  headers: [
+    { id: generateId(), key: 'Content-Type', value: 'application/json', enabled: true },
+    { id: generateId(), key: 'Accept', value: '*/*', enabled: true },
+    { id: generateId(), key: '', value: '', enabled: true },
+  ],
+  formDataRows: [{ id: generateId(), key: '', value: '', enabled: true }],
   body: { type: 'none' },
   queryParams: [{ key: '', value: '', enabled: true }],
+  preScript: '',
+  postScript: '',
   activeTab: 'params',
+};
+
+export const useRequestStore = create<RequestStore>((set, get) => ({
+  // Initial state
+  ...INITIAL_SNAPSHOT,
+  name: '',
+  savePath: null,
   loading: false,
   activeCorrelationId: null,
+  tabs: [{ tabId: initialTabId, name: 'GET (new)', dirty: false }],
+  activeTabId: initialTabId,
+  tabSnapshots: new Map(),
+  streamingPhase: null,
+  scriptError: null,
 
   // Actions
-  setMethod: (method) => set({ method }),
+  setMethod: (method) => {
+    set({ method });
+    // Update tab name
+    const s = get();
+    set({
+      tabs: s.tabs.map((t) =>
+        t.tabId === s.activeTabId ? { ...t, name: deriveTabName(method, s.url, s.name), dirty: true } : t,
+      ),
+    });
+  },
 
   setUrl: (url) => {
     const { params } = parseUrlParams(url);
     if (params.length > 0) {
-      // Auto-extract query params — keep trailing empty row
       const qIdx = url.indexOf('?');
       const baseUrl = qIdx === -1 ? url : url.slice(0, qIdx);
       set({
@@ -149,12 +343,28 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     } else {
       set({ url, baseUrl: url });
     }
+    // Update tab name + mark dirty
+    const s = get();
+    set({
+      tabs: s.tabs.map((t) =>
+        t.tabId === s.activeTabId ? { ...t, name: deriveTabName(s.method, url, s.name), dirty: true } : t,
+      ),
+    });
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
 
-  setLoading: (loading, correlationId) =>
-    set({ loading, activeCorrelationId: correlationId !== undefined ? correlationId : get().activeCorrelationId }),
+  setLoading: (loading, correlationId) => {
+    const patch: Partial<RequestState> = {
+      loading,
+      activeCorrelationId: correlationId !== undefined ? correlationId : get().activeCorrelationId,
+    };
+    // Clear any script error when a new request starts
+    if (loading) {
+      patch.scriptError = null;
+    }
+    set(patch);
+  },
 
   addHeader: () =>
     set((s) => ({
@@ -169,6 +379,22 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   removeHeader: (id) =>
     set((s) => ({
       headers: s.headers.filter((h) => h.id !== id),
+    })),
+
+  // Form-data row actions — independent from HTTP headers (C-02)
+  addFormRow: () =>
+    set((s) => ({
+      formDataRows: [...s.formDataRows, { id: generateId(), key: '', value: '', enabled: true }],
+    })),
+
+  updateFormRow: (id, patch) =>
+    set((s) => ({
+      formDataRows: s.formDataRows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    })),
+
+  removeFormRow: (id) =>
+    set((s) => ({
+      formDataRows: s.formDataRows.filter((r) => r.id !== id),
     })),
 
   addParam: () =>
@@ -191,10 +417,28 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
   setBody: (body) => set({ body }),
 
+  setPreScript: (preScript) => {
+    set({ preScript });
+    get().markDirty();
+  },
+  setPostScript: (postScript) => {
+    set({ postScript });
+    get().markDirty();
+  },
+
   loadRequest: (patch) =>
     set((s) => {
       const baseUrl = patch.url ? parseUrlParams(patch.url).baseUrl : s.baseUrl;
-      return { ...patch, baseUrl };
+      const newMethod = (patch.method as HttpMethod | undefined) ?? s.method;
+      const newUrl = patch.url ?? s.url;
+      const newName = patch.name ?? s.name;
+      // Update the active tab name to reflect the loaded request
+      const updatedTabs = s.tabs.map((t) =>
+        t.tabId === s.activeTabId
+          ? { ...t, name: deriveTabName(newMethod, newUrl, newName), dirty: false }
+          : t,
+      );
+      return { ...patch, baseUrl, tabs: updatedTabs };
     }),
 
   toRequestDef: () => {
@@ -205,13 +449,174 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         filteredHeaders[h.key.trim()] = h.value;
       }
     }
+
+    // For form-data: serialise formDataRows into "key=value\n..." content (C-02)
+    let body: RequestBody | undefined = s.body.type === 'none' ? undefined : s.body;
+    if (s.body.type === 'form-data') {
+      const content = s.formDataRows
+        .filter((r) => r.enabled && r.key.trim() !== '')
+        .map((r) => `${r.key.trim()}=${r.value}`)
+        .join('\n');
+      body = { type: 'form-data', content };
+    }
+
     return {
       id: s.id,
+      name: s.name || undefined,
       method: s.method,
       url: s.url,
       headers: filteredHeaders,
-      body: s.body.type === 'none' ? undefined : s.body,
+      ...(body !== undefined ? { body } : {}),
       queryParams: s.queryParams.filter((p) => p.key.trim() !== ''),
+      ...(s.preScript ? { preScript: s.preScript } : {}),
+      ...(s.postScript ? { postScript: s.postScript } : {}),
     };
+  },
+
+  // Tab management (REQ-RB-007)
+
+  addTab: () => {
+    const tabId = generateId();
+    const newSnapshot: TabSnapshot = {
+      id: generateId(),
+      name: '',
+      savePath: null,
+      method: 'GET',
+      url: '',
+      baseUrl: '',
+      headers: [
+        { id: generateId(), key: 'Content-Type', value: 'application/json', enabled: true },
+        { id: generateId(), key: 'Accept', value: '*/*', enabled: true },
+        { id: generateId(), key: '', value: '', enabled: true },
+      ],
+      formDataRows: [{ id: generateId(), key: '', value: '', enabled: true }],
+      body: { type: 'none' },
+      queryParams: [{ key: '', value: '', enabled: true }],
+      preScript: '',
+      postScript: '',
+      activeTab: 'params',
+    };
+    set((s) => {
+      // Save current tab's state before switching
+      const updatedSnapshots = new Map(s.tabSnapshots);
+      updatedSnapshots.set(s.activeTabId, captureSnapshot(s));
+      updatedSnapshots.set(tabId, newSnapshot);
+      return {
+        ...applySnapshot(newSnapshot),
+        loading: false,
+        activeCorrelationId: null,
+        tabs: [...s.tabs, { tabId, name: 'GET (new)', dirty: false }],
+        activeTabId: tabId,
+        tabSnapshots: updatedSnapshots,
+        streamingPhase: null,
+      };
+    });
+  },
+
+  closeTab: (tabId) => {
+    const s = get();
+    if (s.tabs.length <= 1) return; // Cannot close the last tab
+
+    const remaining = s.tabs.filter((t) => t.tabId !== tabId);
+    const fallbackTab = remaining.at(-1) ?? remaining.at(0);
+    const newActiveTabId = s.activeTabId === tabId
+      ? (fallbackTab?.tabId ?? s.activeTabId)
+      : s.activeTabId;
+
+    // Clean up snapshot for closed tab
+    const updatedSnapshots = new Map(s.tabSnapshots);
+    updatedSnapshots.delete(tabId);
+
+    if (s.activeTabId === tabId && newActiveTabId !== tabId) {
+      // Restore the new active tab's snapshot
+      const restoredSnapshot = updatedSnapshots.get(newActiveTabId);
+      if (restoredSnapshot) {
+        set({
+          ...applySnapshot(restoredSnapshot),
+          tabs: remaining,
+          activeTabId: newActiveTabId,
+          tabSnapshots: updatedSnapshots,
+        });
+        return;
+      }
+    }
+
+    set({ tabs: remaining, activeTabId: newActiveTabId, tabSnapshots: updatedSnapshots });
+  },
+
+  switchTab: (tabId) => {
+    // REQ-RB-007: snapshot current state, restore target tab state
+    const s = get();
+    if (tabId === s.activeTabId) return;
+
+    const updatedSnapshots = new Map(s.tabSnapshots);
+    // Save current tab's state
+    updatedSnapshots.set(s.activeTabId, captureSnapshot(s));
+
+    const targetSnapshot = updatedSnapshots.get(tabId);
+    if (targetSnapshot) {
+      set({
+        ...applySnapshot(targetSnapshot),
+        activeTabId: tabId,
+        tabSnapshots: updatedSnapshots,
+        loading: false,
+        activeCorrelationId: null,
+        streamingPhase: null,
+      });
+    } else {
+      // No snapshot yet — switch with a fresh state
+      const freshSnapshot: TabSnapshot = {
+        id: generateId(),
+        name: '',
+        savePath: null,
+        method: 'GET',
+        url: '',
+        baseUrl: '',
+        headers: [
+          { id: generateId(), key: 'Content-Type', value: 'application/json', enabled: true },
+          { id: generateId(), key: 'Accept', value: '*/*', enabled: true },
+          { id: generateId(), key: '', value: '', enabled: true },
+        ],
+        formDataRows: [{ id: generateId(), key: '', value: '', enabled: true }],
+        body: { type: 'none' },
+        queryParams: [{ key: '', value: '', enabled: true }],
+        preScript: '',
+        postScript: '',
+        activeTab: 'params',
+      };
+      updatedSnapshots.set(tabId, freshSnapshot);
+      set({
+        ...applySnapshot(freshSnapshot),
+        activeTabId: tabId,
+        tabSnapshots: updatedSnapshots,
+        loading: false,
+        activeCorrelationId: null,
+        streamingPhase: null,
+      });
+    }
+  },
+
+  markDirty: () => {
+    const s = get();
+    set({
+      tabs: s.tabs.map((t) =>
+        t.tabId === s.activeTabId ? { ...t, dirty: true } : t,
+      ),
+    });
+  },
+
+  setStreamingPhase: (phase) => set({ streamingPhase: phase }),
+
+  setScriptError: (error) => set({ scriptError: error }),
+
+  getSavePath: () => get().savePath,
+  setSavePath: (path) => set({ savePath: path }),
+  markSaved: () => {
+    const s = get();
+    set({
+      tabs: s.tabs.map((t) =>
+        t.tabId === s.activeTabId ? { ...t, dirty: false } : t,
+      ),
+    });
   },
 }));

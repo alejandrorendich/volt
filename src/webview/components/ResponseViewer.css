@@ -358,3 +358,21 @@
   font-size: var(--volt-font-size-sm);
   text-align: center;
 }
+
+/* Copy feedback state */
+.rv-action-btn--success {
+  color: var(--volt-status-success) !important;
+  border-color: var(--volt-status-success) !important;
+}
+
+/* Empty body */
+.rv-body-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 60px;
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size-sm);
+  font-style: italic;
+}

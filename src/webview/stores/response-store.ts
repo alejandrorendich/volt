@@ -6,8 +6,8 @@
  */
 
 import { create } from 'zustand';
-import type { HttpResponseDef } from '../../../shared/models';
-import type { ExecuteErrorCode } from '../../../shared/protocol';
+import type { HttpResponseDef } from '../../shared/models';
+import type { ExecuteErrorCode } from '../../shared/protocol';
 
 // ---------------------------------------------------------------------------
 // State
@@ -55,6 +55,8 @@ export const useResponseStore = create<ResponseStore>((set) => ({
   setLoading: () => set({ status: 'loading', error: null }),
   setResponse: (response) => set({ status: 'success', response, error: null }),
   setError: (error) => set({ status: 'error', error, response: null }),
+  // activeTab is intentionally preserved so the user's tab selection survives
+  // across requests (e.g., staying on Headers or Timing).
   reset: () => set({ status: 'idle', response: null, error: null }),
   setActiveTab: (tab) => set({ activeTab: tab }),
 }));

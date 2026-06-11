@@ -9,7 +9,10 @@
 
 import React, { memo, useCallback, useMemo, useState } from 'react';
 import { useResponseStore } from '../stores/response-store';
+import { useRequestStore } from '../stores/request-store';
+import { useMessage } from '../hooks/useMessage';
 import { TimingBar } from './TimingBar';
+import { buildCurlCommand } from '../utils/curl';
 import type { HttpResponseDef } from '../../shared/models';
 import './ResponseViewer.css';
 
@@ -72,7 +75,7 @@ interface BodyDisplayProps {
 }
 
 const BodyDisplay = memo(function BodyDisplay({ response }: BodyDisplayProps): React.ReactElement {
-  const { body, bodySize, headers, truncated } = response;
+  const { body, bodySize, headers, truncated, bodyRef } = response;
   const contentType = headers['content-type'] ?? headers['Content-Type'] ?? '';
 
   const isJson = contentType.includes('json');
@@ -83,9 +86,47 @@ const BodyDisplay = memo(function BodyDisplay({ response }: BodyDisplayProps): R
   const tooLarge = body.length > MAX_DISPLAY_BYTES;
   const displayBody = tooLarge ? body.slice(0, MAX_DISPLAY_BYTES) : body;
 
+  const { send } = useMessage();
+
   const copyBody = useCallback(() => {
     void navigator.clipboard.writeText(body);
   }, [body]);
+
+  const saveToFile = useCallback(() => {
+    send({
+      type: 'request:save-to-file',
+      correlationId: `save-${Date.now()}`,
+      payload: {
+        suggestedName: 'response.txt',
+        content: body,
+      },
+    });
+  }, [body, send]);
+
+  // REQ-MSG-005: Large body reference — body was offloaded to a temp file
+  if (bodyRef) {
+    const sizeMB = (bodySize / (1024 * 1024)).toFixed(1);
+    return (
+      <div className="rv-body-ref">
+        <span className="rv-body-ref__icon" aria-hidden="true">📦</span>
+        <span>Response too large to display ({sizeMB} MB).</span>
+        <button
+          type="button"
+          className="rv-body-ref__save"
+          aria-label="Save large response body"
+          onClick={() =>
+            send({
+              type: 'request:save-to-file',
+              correlationId: `save-${Date.now()}`,
+              payload: { suggestedName: 'response.txt', content: bodyRef },
+            })
+          }
+        >
+          Click to save
+        </button>
+      </div>
+    );
+  }
 
   // JSON pretty-print attempt
   const prettyJson = useMemo(() => {
@@ -97,12 +138,24 @@ const BodyDisplay = memo(function BodyDisplay({ response }: BodyDisplayProps): R
     }
   }, [isJson, displayBody]);
 
+  if (body === '' && !isBinary) {
+    const statusCode = response.status;
+    const isNoContent = statusCode === 204 || statusCode === 304;
+    return (
+      <div className="rv-body-empty">
+        <span className="rv-empty-hint">
+          {isNoContent ? `No content (${statusCode})` : 'Empty response body'}
+        </span>
+      </div>
+    );
+  }
+
   if (isBinary) {
     return (
       <div className="rv-body-binary">
         <span className="rv-body-binary__icon" aria-hidden="true">⬡</span>
         <span>Binary response — {formatBytes(bodySize)}</span>
-        <button type="button" className="rv-action-btn" onClick={copyBody}>
+        <button type="button" className="rv-action-btn" onClick={saveToFile}>
           Save to file
         </button>
       </div>
@@ -114,8 +167,8 @@ const BodyDisplay = memo(function BodyDisplay({ response }: BodyDisplayProps): R
       {tooLarge && (
         <div className="rv-body-warning" role="alert">
           <span>Response too large — showing first {formatBytes(MAX_DISPLAY_BYTES)} of {formatBytes(bodySize)}</span>
-          <button type="button" className="rv-action-btn" onClick={copyBody}>
-            Copy full response
+          <button type="button" className="rv-action-btn" onClick={saveToFile}>
+            Save full response
           </button>
         </div>
       )}
@@ -192,15 +245,27 @@ interface StatusBarProps {
 
 const StatusBar = memo(function StatusBar({ response }: StatusBarProps): React.ReactElement {
   const cls = statusClass(response.status);
-  const copyAsCurl = useCallback(() => {
-    // Minimal cURL representation
-    const curl = `curl -X GET '${response.requestId}'`;
-    void navigator.clipboard.writeText(curl);
-  }, [response.requestId]);
+  const [copyBodyFeedback, setCopyBodyFeedback] = useState(false);
+  const [copyCurlFeedback, setCopyCurlFeedback] = useState(false);
+
+  // Pull the current request from the store to build a proper cURL command
+  const toRequestDef = useRequestStore((s) => s.toRequestDef);
 
   const copyBody = useCallback(() => {
-    void navigator.clipboard.writeText(response.body);
+    void navigator.clipboard.writeText(response.body).then(() => {
+      setCopyBodyFeedback(true);
+      setTimeout(() => setCopyBodyFeedback(false), 1500);
+    });
   }, [response.body]);
+
+  const copyAsCurl = useCallback(() => {
+    const request = toRequestDef();
+    const curl = buildCurlCommand(request);
+    void navigator.clipboard.writeText(curl).then(() => {
+      setCopyCurlFeedback(true);
+      setTimeout(() => setCopyCurlFeedback(false), 1500);
+    });
+  }, [toRequestDef]);
 
   return (
     <div className="rv-status-bar">
@@ -215,11 +280,23 @@ const StatusBar = memo(function StatusBar({ response }: StatusBarProps): React.R
         {formatBytes(response.bodySize)}
       </span>
       <div className="rv-actions">
-        <button type="button" className="rv-action-btn" onClick={copyBody} title="Copy response body">
-          Copy
+        <button
+          type="button"
+          className={`rv-action-btn${copyBodyFeedback ? ' rv-action-btn--success' : ''}`}
+          onClick={copyBody}
+          title="Copy response body (raw)"
+          aria-label="Copy response body"
+        >
+          {copyBodyFeedback ? '✓ Copied' : 'Copy'}
         </button>
-        <button type="button" className="rv-action-btn" onClick={copyAsCurl} title="Copy as cURL command">
-          cURL
+        <button
+          type="button"
+          className={`rv-action-btn${copyCurlFeedback ? ' rv-action-btn--success' : ''}`}
+          onClick={copyAsCurl}
+          title="Copy as cURL command"
+          aria-label="Copy as cURL"
+        >
+          {copyCurlFeedback ? '✓ Copied' : 'cURL'}
         </button>
       </div>
     </div>

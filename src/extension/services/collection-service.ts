@@ -63,6 +63,8 @@ interface RawRequestYaml {
   queryParams?: unknown;
   variables?: unknown;
   description?: unknown;
+  preScript?: unknown;
+  postScript?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +212,19 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
     }
 
     return this.parseRequestFile(absPath);
+  }
+
+  /**
+   * Null-safe variant of `loadRequest` — returns `null` if the file does not
+   * exist instead of throwing. Satisfies the `ICollectionService` interface.
+   * @param relativeFilePath - Relative to `.volt/requests/`, without extension.
+   */
+  async getRequest(relativeFilePath: string): Promise<HttpRequestDef | null> {
+    try {
+      return await this.loadRequest(relativeFilePath);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -600,7 +615,7 @@ function normalizeRelPath(p: string): string {
 function buildRequestYaml(req: HttpRequestDef): string {
   // Shape the object for YAML output — matches the YAML schema
   const out: Record<string, unknown> = {
-    name: (req as unknown as Record<string, unknown>)['name'] ?? '',
+    name: req.name ?? '',
     method: req.method,
     url: req.url,
   };
@@ -610,7 +625,11 @@ function buildRequestYaml(req: HttpRequestDef): string {
   }
 
   if (req.body && req.body.type !== 'none') {
-    out['body'] = { type: req.body.type, content: req.body.content };
+    if (req.body.type === 'binary') {
+      out['body'] = { type: req.body.type, filePath: req.body.filePath };
+    } else {
+      out['body'] = { type: req.body.type, content: req.body.content };
+    }
   }
 
   if (req.queryParams.length > 0) {
@@ -619,6 +638,14 @@ function buildRequestYaml(req: HttpRequestDef): string {
       value: p.value,
       enabled: p.enabled,
     }));
+  }
+
+  if (req.preScript) {
+    out['preScript'] = req.preScript;
+  }
+
+  if (req.postScript) {
+    out['postScript'] = req.postScript;
   }
 
   return yaml.dump(out, { lineWidth: 120, noCompatMode: true });
@@ -636,6 +663,7 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
 
   const url = typeof raw.url === 'string' ? raw.url : '';
   const id = typeof raw.id === 'string' ? raw.id : path.basename(absPath, '.yaml');
+  const name = typeof raw.name === 'string' ? raw.name : path.basename(absPath, '.yaml');
 
   const headers: Record<string, string> = {};
   if (raw.headers && typeof raw.headers === 'object') {
@@ -675,7 +703,15 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
     }
   }
 
-  return { id, method, url, headers, queryParams, ...(body !== undefined ? { body } : {}) };
+  const preScript = typeof raw.preScript === 'string' ? raw.preScript : undefined;
+  const postScript = typeof raw.postScript === 'string' ? raw.postScript : undefined;
+
+  return {
+    id, name, method, url, headers, queryParams,
+    ...(body !== undefined ? { body } : {}),
+    ...(preScript ? { preScript } : {}),
+    ...(postScript ? { postScript } : {}),
+  };
 }
 
 /**
@@ -707,7 +743,12 @@ function applyOrder(nodes: CollectionTreeNode[], order: CollectionOrderEntry[]):
     const key = 'folder' in entry ? entry.folder : entry.request;
     const kind = 'folder' in entry ? 'folder' : 'request';
 
-    const idx = remaining.findIndex((n) => n.kind === kind && n.name === key);
+    const idx = remaining.findIndex((n) => {
+      if (n.kind !== kind) return false;
+      if (kind === 'folder') return n.name === key;
+      // For requests, collection.yaml stores the relative path, not the display name
+      return (n as CollectionRequestItem).path === key;
+    });
     if (idx !== -1) {
       ordered.push(remaining.splice(idx, 1)[0]!);
     }

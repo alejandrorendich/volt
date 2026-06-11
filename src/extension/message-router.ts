@@ -19,6 +19,8 @@
  */
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import type {
   HostMessage,
   WebviewMessage,
@@ -34,7 +36,11 @@ import type {
  * Phase 3 provides the concrete implementation.
  */
 export interface IHttpService {
-  execute(request: import('../shared/models').HttpRequestDef, correlationId: CorrelationId): Promise<import('../shared/models').HttpResponseDef>;
+  execute(
+    request: import('../shared/models').HttpRequestDef,
+    correlationId: CorrelationId,
+    onProgress?: (phase: import('../shared/models').TimingPhase, elapsed: number) => void,
+  ): Promise<import('../shared/models').HttpResponseDef>;
   cancel(requestId: string): void;
 }
 
@@ -45,6 +51,8 @@ export interface IHttpService {
 export interface ICollectionService {
   loadTree(): Promise<import('../shared/models').CollectionTree>;
   saveRequest(filePath: string, request: import('../shared/models').HttpRequestDef): Promise<void>;
+  getRequest(filePath: string): Promise<import('../shared/models').HttpRequestDef | null>;
+  createFolder(relativeFolderPath: string): Promise<void>;
 }
 
 /**
@@ -54,6 +62,16 @@ export interface ICollectionService {
 export interface IEnvironmentService {
   setActive(name: string): Promise<void>;
   getResolved(): Promise<import('../shared/models').ResolvedEnv>;
+  /** Create a new environment file. */
+  createEnvironment(name: string): Promise<void>;
+  /** Update variables in the active environment file (merge). */
+  updateVariables(updates: Record<string, string>): Promise<void>;
+  /** Delete a single variable from the active environment file. */
+  deleteVariable(key: string): Promise<void>;
+  /** Delete an entire environment file and auto-switch. */
+  deleteEnvironment(name: string): Promise<void>;
+  /** Rename an environment (renames the YAML file). */
+  renameEnvironment(oldName: string, newName: string): Promise<void>;
   /** Apply {{var}} interpolation to all fields of a request. */
   resolveRequest?(
     request: import('../shared/models').HttpRequestDef,
@@ -85,6 +103,12 @@ export class MessageRouter implements vscode.Disposable {
   /** Messages queued before the webview-ready handshake fires. */
   private readonly pendingQueue: WebviewMessage[] = [];
   private isWebviewReady = false;
+
+  /** Optional callback fired after a successful environment switch. */
+  onEnvironmentChanged?: (envName: string) => void;
+
+  /** Optional callback fired after an import to refresh the tree. */
+  treeRefresh?: () => void;
 
   constructor(output: vscode.OutputChannel, services: RouterServices = {}) {
     this.output = output;
@@ -127,7 +151,7 @@ export class MessageRouter implements vscode.Disposable {
       const message = err instanceof Error ? err.message : String(err);
       this.output.appendLine(`[MessageRouter] ERROR dispatching ${msg.type}: ${message}`);
       this.sendToWebview({
-        type: 'execute-error',
+        type: 'response:execute-error',
         correlationId: msg.correlationId,
         payload: {
           message: `Internal error: ${message}`,
@@ -155,34 +179,103 @@ export class MessageRouter implements vscode.Disposable {
     this.sendToWebview(message);
   }
 
+  /**
+   * Push a saved request from the collection into the webview builder.
+   * Called by `volt.openRequest` command when the user clicks a tree item
+   * (REQ-COL-001 — tree click loads request into builder).
+   */
+  pushRequest(requestPath: string): void {
+    if (!this.services.collection) return;
+
+    this.services.collection.getRequest(requestPath).then((request) => {
+      if (!request) {
+        this.output.appendLine(`[MessageRouter] WARN: request not found — ${requestPath}`);
+        return;
+      }
+      // Ensure id matches the relative path (used as savePath in webview)
+      const requestWithPath = { ...request, id: requestPath };
+      this.send({
+        type: 'event:load-request',
+        correlationId: `load-${Date.now()}`,
+        payload: requestWithPath,
+      });
+    }).catch((err: unknown) => {
+      this.output.appendLine(`[MessageRouter] ERROR pushing request: ${String(err)}`);
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Dispatch — switch on message type
   // ---------------------------------------------------------------------------
 
   private async dispatch(msg: HostMessage): Promise<void> {
     switch (msg.type) {
-      case 'webview-ready':
+      case 'request:ready':
         await this.handleWebviewReady(msg.correlationId);
         break;
 
-      case 'execute-request':
+      case 'request:execute-http':
         await this.handleExecuteRequest(msg.correlationId, msg.payload);
         break;
 
-      case 'cancel-request':
+      case 'request:cancel-http':
         this.handleCancelRequest(msg.payload.id);
         break;
 
-      case 'save-request':
+      case 'request:save-request':
         await this.handleSaveRequest(msg.correlationId, msg.payload);
         break;
 
-      case 'load-collection':
+      case 'request:get-collection':
         await this.handleLoadCollection(msg.correlationId);
         break;
 
-      case 'set-environment':
+      case 'request:set-environment':
         await this.handleSetEnvironment(msg.correlationId, msg.payload.name);
+        break;
+
+      case 'request:get-request':
+        await this.handleGetRequest(msg.correlationId, msg.payload.path);
+        break;
+
+      case 'request:save-to-file':
+        await this.handleSaveToFile(msg.payload.suggestedName, msg.payload.content);
+        break;
+
+      case 'request:create-environment':
+        await this.handleCreateEnvironment(msg.correlationId, msg.payload.name);
+        break;
+
+      case 'request:update-env-var':
+        await this.handleUpdateEnvVar(msg.correlationId, msg.payload.key, msg.payload.value);
+        break;
+
+      case 'request:delete-env-var':
+        await this.handleDeleteEnvVar(msg.correlationId, msg.payload.key);
+        break;
+
+      case 'request:delete-environment':
+        await this.handleDeleteEnvironment(msg.correlationId, msg.payload.name);
+        break;
+
+      case 'request:rename-environment':
+        await this.handleRenameEnvironment(msg.correlationId, msg.payload.oldName, msg.payload.newName);
+        break;
+
+      case 'request:pick-binary-file':
+        await this.handlePickBinaryFile(msg.correlationId);
+        break;
+
+      case 'request:export-request':
+        await this.handleExportRequest(msg.correlationId, msg.payload.path);
+        break;
+
+      case 'request:export-folder':
+        await this.handleExportFolder(msg.correlationId, msg.payload.folder);
+        break;
+
+      case 'request:import':
+        await this.handleImport(msg.correlationId);
         break;
 
       default: {
@@ -200,7 +293,9 @@ export class MessageRouter implements vscode.Disposable {
 
   /**
    * Webview signals it is mounted and ready.
-   * Flush all queued messages in arrival order (REQ-MSG-006).
+   * Flush all queued messages in arrival order, then push initial state
+   * (collection + active environment) so the UI bootstraps without a round-trip
+   * request from the webview (REQ-MSG-006, REQ-MSG-003).
    */
   private async handleWebviewReady(correlationId: CorrelationId): Promise<void> {
     this.output.appendLine('[MessageRouter] webview-ready received — flushing queue');
@@ -211,8 +306,29 @@ export class MessageRouter implements vscode.Disposable {
     }
     this.pendingQueue.length = 0;
 
-    // Acknowledge the handshake (optional but useful for diagnostics)
     this.output.appendLine(`[MessageRouter] Handshake complete (correlationId: ${correlationId})`);
+
+    // --- Push initial state to the newly-ready webview ---
+
+    // 1. Push collection tree so the sidebar / collection panel renders immediately
+    if (this.services.collection) {
+      try {
+        const tree = await this.services.collection.loadTree();
+        this.sendToWebview({ type: 'response:collection', correlationId, payload: tree });
+      } catch (err: unknown) {
+        this.output.appendLine(`[MessageRouter] WARN: initial collection push failed — ${String(err)}`);
+      }
+    }
+
+    // 2. Push active environment so variables resolve on first request
+    if (this.services.environment) {
+      try {
+        const resolved = await this.services.environment.getResolved();
+        this.sendToWebview({ type: 'event:environment-changed', correlationId, payload: resolved });
+      } catch (err: unknown) {
+        this.output.appendLine(`[MessageRouter] WARN: initial env push failed — ${String(err)}`);
+      }
+    }
   }
 
   /** Execute an HTTP request via HttpService (Phase 3 wires the real service). */
@@ -222,7 +338,7 @@ export class MessageRouter implements vscode.Disposable {
   ): Promise<void> {
     if (!this.services.http) {
       this.sendToWebview({
-        type: 'execute-error',
+        type: 'response:execute-error',
         correlationId,
         payload: { message: 'HTTP service not yet available', code: 'unknown' },
       });
@@ -234,19 +350,75 @@ export class MessageRouter implements vscode.Disposable {
       const resolvedRequest =
         this.services.environment?.resolveRequest?.(request) ?? request;
 
-      const response = await this.services.http.execute(resolvedRequest, correlationId);
-      this.sendToWebview({ type: 'execute-response', correlationId, payload: response });
+      // Run pre-script if present
+      if (request.preScript) {
+        const { ScriptRunner } = await import('./services/script-runner');
+        const envVars = (await this.services.environment?.getResolved())?.variables ?? {};
+        const runner = new ScriptRunner(this.output, envVars);
+        const preResult = await runner.runPreScript(request.preScript, resolvedRequest);
+        if (!preResult.success) {
+          this.sendToWebview({
+            type: 'response:execute-error',
+            correlationId,
+            payload: { message: `Pre-script error: ${preResult.error}`, code: 'unknown' },
+          });
+          return;
+        }
+        // Apply any env.set() from pre-script
+        if (Object.keys(preResult.envUpdates).length > 0) {
+          await this.persistEnvUpdates(preResult.envUpdates);
+        }
+      }
+
+      // Progress callback — pushes event:request-progress to webview (REQ-MSG-003)
+      const onProgress = (phase: import('../shared/models').TimingPhase, elapsed: number): void => {
+        this.sendToWebview({
+          type: 'event:request-progress',
+          correlationId,
+          payload: { phase, elapsed },
+        });
+      };
+
+      const response = await this.services.http.execute(resolvedRequest, correlationId, onProgress);
+
+      // Run post-script if present
+      if (request.postScript) {
+        const { ScriptRunner } = await import('./services/script-runner');
+        const envVars = (await this.services.environment?.getResolved())?.variables ?? {};
+        const runner = new ScriptRunner(this.output, envVars);
+        const postResult = await runner.runPostScript(request.postScript, response);
+        if (!postResult.success) {
+          this.output.appendLine(`[MessageRouter] Post-script error: ${postResult.error}`);
+          // Surface the error in the webview Scripts tab — non-blocking
+          this.sendToWebview({
+            type: 'event:script-error',
+            correlationId,
+            payload: { phase: 'post', message: postResult.error ?? 'Unknown post-script error' },
+          });
+        }
+        // Persist any env.set() from post-script to the active environment file
+        if (Object.keys(postResult.envUpdates).length > 0) {
+          await this.persistEnvUpdates(postResult.envUpdates);
+          // Notify webview of env change
+          const resolved = await this.services.environment?.getResolved();
+          if (resolved) {
+            this.sendToWebview({ type: 'event:environment-changed', correlationId, payload: resolved });
+          }
+        }
+      }
+
+      this.sendToWebview({ type: 'response:execute-http', correlationId, payload: response });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       // Map structured error codes from HttpService (attached as err.code)
       const code = (err instanceof Error && (err as NodeJS.ErrnoException).code)
         ? (err as NodeJS.ErrnoException).code
         : 'unknown';
-      this.sendToWebview({
-        type: 'execute-error',
-        correlationId,
-        payload: { message, code: code as import('../shared/protocol').ExecuteErrorCode },
-      });
+        this.sendToWebview({
+          type: 'response:execute-error',
+          correlationId,
+          payload: { message, code: code as import('../shared/protocol').ExecuteErrorCode },
+        });
     }
   }
 
@@ -257,9 +429,21 @@ export class MessageRouter implements vscode.Disposable {
     }
   }
 
+  /**
+   * Persist env.set() updates from scripts to the active environment file.
+   */
+  private async persistEnvUpdates(updates: Record<string, string>): Promise<void> {
+    if (!this.services.environment) return;
+    try {
+      await this.services.environment.updateVariables(updates);
+    } catch (err: unknown) {
+      this.output.appendLine(`[MessageRouter] Failed to persist env updates: ${String(err)}`);
+    }
+  }
+
   /** Persist a request definition via CollectionService (Phase 4). */
   private async handleSaveRequest(
-    correlationId: CorrelationId,
+    _correlationId: CorrelationId,
     payload: { path: string; request: import('../shared/models').HttpRequestDef },
   ): Promise<void> {
     if (!this.services.collection) {
@@ -267,10 +451,32 @@ export class MessageRouter implements vscode.Disposable {
       return;
     }
 
+    let savePath = payload.path;
+
+    // If no path provided, ask user for a name via VS Code input box
+    if (!savePath) {
+      const name = await vscode.window.showInputBox({
+        prompt: 'Request name',
+        placeHolder: 'e.g. get-users',
+        validateInput: (value) => {
+          if (!value) return 'Name is required';
+          if (!/^[a-zA-Z0-9_/-]+$/.test(value)) return 'Only letters, numbers, hyphens, underscores, and slashes';
+          return undefined;
+        },
+      });
+      if (!name) return; // User cancelled
+      savePath = name;
+    }
+
     try {
-      await this.services.collection.saveRequest(payload.path, payload.request);
-      // Reload the tree so the webview reflects the new request
-      await this.handleLoadCollection(correlationId);
+      const requestWithName = { ...payload.request, name: payload.request.name ?? (savePath.split('/').pop() ?? savePath) };
+      await this.services.collection.saveRequest(savePath, requestWithName);
+      // Confirm save to webview with the resolved path
+      this.sendToWebview({
+        type: 'response:request-saved',
+        correlationId: `saved-${Date.now()}`,
+        payload: { path: savePath },
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.output.appendLine(`[MessageRouter] ERROR in save-request: ${message}`);
@@ -282,7 +488,7 @@ export class MessageRouter implements vscode.Disposable {
     if (!this.services.collection) {
       // Return an empty tree so the webview can render a useful empty state
       this.sendToWebview({
-        type: 'collection-loaded',
+        type: 'response:collection',
         correlationId,
         payload: { name: '', version: 1, nodes: [] },
       });
@@ -291,10 +497,16 @@ export class MessageRouter implements vscode.Disposable {
 
     try {
       const tree = await this.services.collection.loadTree();
-      this.sendToWebview({ type: 'collection-loaded', correlationId, payload: tree });
+      this.sendToWebview({ type: 'response:collection', correlationId, payload: tree });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.output.appendLine(`[MessageRouter] ERROR in load-collection: ${message}`);
+      // Send empty tree so the webview shows an empty state rather than hanging (C-05)
+      this.sendToWebview({
+        type: 'response:collection',
+        correlationId,
+        payload: { name: '', version: 1, nodes: [] },
+      });
     }
   }
 
@@ -311,10 +523,545 @@ export class MessageRouter implements vscode.Disposable {
     try {
       await this.services.environment.setActive(name);
       const resolved = await this.services.environment.getResolved();
-      this.sendToWebview({ type: 'environment-changed', correlationId, payload: resolved });
+      this.sendToWebview({ type: 'event:environment-changed', correlationId, payload: resolved });
+      // Notify status bar (and any other listeners) of the change
+      this.onEnvironmentChanged?.(resolved.active);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.output.appendLine(`[MessageRouter] ERROR in set-environment: ${message}`);
+      // Notify webview so it can surface a toast/error notification (C-05)
+      this.sendToWebview({
+        type: 'response:execute-error',
+        correlationId,
+        payload: { message: `Failed to switch environment: ${message}`, code: 'unknown' },
+      });
+    }
+  }
+
+  /** Create a new environment and activate it. */
+  private async handleCreateEnvironment(
+    correlationId: CorrelationId,
+    name: string,
+  ): Promise<void> {
+    if (!this.services.environment) {
+      this.output.appendLine('[MessageRouter] EnvironmentService not available — create-environment ignored');
+      return;
+    }
+
+    try {
+      await this.services.environment.createEnvironment(name);
+      await this.services.environment.setActive(name);
+      const resolved = await this.services.environment.getResolved();
+      this.sendToWebview({ type: 'event:environment-changed', correlationId, payload: resolved });
+      this.onEnvironmentChanged?.(resolved.active);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in create-environment: ${message}`);
+    }
+  }
+
+  /** Set or update a single variable in the active environment. */
+  private async handleUpdateEnvVar(
+    correlationId: CorrelationId,
+    key: string,
+    value: string,
+  ): Promise<void> {
+    if (!this.services.environment) {
+      this.output.appendLine('[MessageRouter] EnvironmentService not available — update-env-var ignored');
+      return;
+    }
+
+    try {
+      await this.services.environment.updateVariables({ [key]: value });
+      const resolved = await this.services.environment.getResolved();
+      this.sendToWebview({ type: 'event:environment-changed', correlationId, payload: resolved });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in update-env-var: ${message}`);
+    }
+  }
+
+  /** Delete a single variable from the active environment. */
+  private async handleDeleteEnvVar(
+    correlationId: CorrelationId,
+    key: string,
+  ): Promise<void> {
+    if (!this.services.environment) {
+      this.output.appendLine('[MessageRouter] EnvironmentService not available — delete-env-var ignored');
+      return;
+    }
+
+    try {
+      await this.services.environment.deleteVariable(key);
+      const resolved = await this.services.environment.getResolved();
+      this.sendToWebview({ type: 'event:environment-changed', correlationId, payload: resolved });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in delete-env-var: ${message}`);
+    }
+  }
+
+  /** Delete an entire environment file and auto-switch to the next one. */
+  private async handleDeleteEnvironment(
+    correlationId: CorrelationId,
+    name: string,
+  ): Promise<void> {
+    if (!this.services.environment) {
+      this.output.appendLine('[MessageRouter] EnvironmentService not available — delete-environment ignored');
+      return;
+    }
+
+    try {
+      await this.services.environment.deleteEnvironment(name);
+      const resolved = await this.services.environment.getResolved();
+      this.sendToWebview({ type: 'event:environment-changed', correlationId, payload: resolved });
+      this.onEnvironmentChanged?.(resolved.active);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in delete-environment: ${message}`);
+    }
+  }
+
+  private async handleRenameEnvironment(
+    correlationId: CorrelationId,
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    if (!this.services.environment) {
+      this.output.appendLine('[MessageRouter] EnvironmentService not available — rename-environment ignored');
+      return;
+    }
+
+    try {
+      await this.services.environment.renameEnvironment(oldName, newName);
+      const resolved = await this.services.environment.getResolved();
+      this.sendToWebview({ type: 'event:environment-changed', correlationId, payload: resolved });
+      this.onEnvironmentChanged?.(resolved.active);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in rename-environment: ${message}`);
+    }
+  }
+
+  /** Load a single request by path and push it to the webview builder. */
+  private async handleGetRequest(
+    correlationId: CorrelationId,
+    requestPath: string,
+  ): Promise<void> {
+    if (!this.services.collection) {
+      this.output.appendLine('[MessageRouter] CollectionService not available — get-request ignored');
+      return;
+    }
+
+    try {
+      const request = await this.services.collection.getRequest(requestPath);
+      if (!request) {
+        this.output.appendLine(`[MessageRouter] WARN: request not found — ${requestPath}`);
+        return;
+      }
+      // Ensure id matches the relative path (used as savePath in webview)
+      const requestWithPath = { ...request, id: requestPath };
+      this.sendToWebview({ type: 'event:load-request', correlationId, payload: requestWithPath });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in get-request: ${message}`);
+      // Notify webview so it can surface an error notification (C-05)
+      this.sendToWebview({
+        type: 'response:execute-error',
+        correlationId,
+        payload: { message: `Failed to load request: ${message}`, code: 'unknown' },
+      });
+    }
+  }
+
+  /**
+   * Open a native file picker and return the selected file path to the webview
+   * as `response:binary-file-picked`. Used by BinaryBodyPicker (C-01).
+   */
+  private async handlePickBinaryFile(correlationId: CorrelationId): Promise<void> {
+    const uris = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      openLabel: 'Select File',
+      title: 'Select Binary Body File',
+    });
+
+    if (!uris || uris.length === 0) {
+      this.sendToWebview({ type: 'response:binary-file-picked', correlationId, payload: null });
+      return;
+    }
+
+    const uri = uris[0];
+    if (!uri) {
+      this.sendToWebview({ type: 'response:binary-file-picked', correlationId, payload: null });
+      return;
+    }
+    const fsPath = uri.fsPath;
+    const name = fsPath.split(/[\\/]/).pop() ?? fsPath;
+    this.sendToWebview({
+      type: 'response:binary-file-picked',
+      correlationId,
+      payload: { path: fsPath, name },
+    });
+  }
+
+  /**
+   * Export a single request to a `.volt-request.json` file via native save dialog.
+   */
+  private async handleExportRequest(
+    _correlationId: CorrelationId,
+    requestPath: string,
+  ): Promise<void> {
+    if (!this.services.collection) {
+      void vscode.window.showWarningMessage('Volt: Open a folder to export requests.');
+      return;
+    }
+
+    try {
+      const request = await this.services.collection.getRequest(requestPath);
+      if (!request) {
+        void vscode.window.showWarningMessage(`Volt: Request not found — ${requestPath}`);
+        return;
+      }
+
+      const exportObj = {
+        volt_version: '1.0',
+        type: 'request',
+        exported_at: new Date().toISOString(),
+        request: {
+          name: request.name ?? requestPath.split('/').pop() ?? requestPath,
+          method: request.method,
+          url: request.url,
+          headers: request.headers,
+          body: request.body,
+          queryParams: request.queryParams,
+          preScript: request.preScript,
+          postScript: request.postScript,
+        },
+      };
+
+      const suggestedName = `${request.name ?? requestPath.split('/').pop() ?? 'request'}.volt-request.json`;
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(suggestedName),
+        filters: { 'Volt Request': ['volt-request.json'] },
+        saveLabel: 'Export',
+        title: 'Export Request',
+      });
+      if (!uri) return;
+
+      fs.writeFileSync(uri.fsPath, JSON.stringify(exportObj, null, 2), 'utf8');
+      void vscode.window.showInformationMessage(`Volt: Request exported to ${path.basename(uri.fsPath)}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in export-request: ${message}`);
+      void vscode.window.showErrorMessage(`Volt: Export failed — ${message}`);
+    }
+  }
+
+  /**
+   * Export all requests in a folder to a `.volt-collection.json` file.
+   */
+  private async handleExportFolder(
+    _correlationId: CorrelationId,
+    folder: string,
+  ): Promise<void> {
+    if (!this.services.collection) {
+      void vscode.window.showWarningMessage('Volt: Open a folder to export collections.');
+      return;
+    }
+
+    try {
+      const tree = await this.services.collection.loadTree();
+      const folderNode = tree.nodes.find(
+        (n) => n.kind === 'folder' && n.name === folder,
+      );
+      if (!folderNode || folderNode.kind !== 'folder') {
+        void vscode.window.showWarningMessage(`Volt: Folder not found — ${folder}`);
+        return;
+      }
+
+      // Collect all request paths inside the folder (recursive)
+      const requestPaths: string[] = [];
+      const collectPaths = (
+        nodes: readonly import('../shared/models').CollectionTreeNode[],
+      ): void => {
+        for (const node of nodes) {
+          if (node.kind === 'request') {
+            requestPaths.push(node.path);
+          } else if (node.kind === 'folder') {
+            collectPaths(node.children);
+          }
+        }
+      };
+      collectPaths(folderNode.children);
+
+      const requests: unknown[] = [];
+      for (const reqPath of requestPaths) {
+        const request = await this.services.collection.getRequest(reqPath);
+        if (request) {
+          requests.push({
+            name: request.name ?? reqPath.split('/').pop() ?? reqPath,
+            method: request.method,
+            url: request.url,
+            headers: request.headers,
+            body: request.body,
+            queryParams: request.queryParams,
+            preScript: request.preScript,
+            postScript: request.postScript,
+          });
+        }
+      }
+
+      const exportObj = {
+        volt_version: '1.0',
+        type: 'collection',
+        exported_at: new Date().toISOString(),
+        folder,
+        requests,
+      };
+
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${folder}.volt-collection.json`),
+        filters: { 'Volt Collection': ['volt-collection.json'] },
+        saveLabel: 'Export',
+        title: 'Export Folder',
+      });
+      if (!uri) return;
+
+      fs.writeFileSync(uri.fsPath, JSON.stringify(exportObj, null, 2), 'utf8');
+      void vscode.window.showInformationMessage(
+        `Volt: Folder "${folder}" exported (${requests.length} request${requests.length !== 1 ? 's' : ''})`,
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in export-folder: ${message}`);
+      void vscode.window.showErrorMessage(`Volt: Export failed — ${message}`);
+    }
+  }
+
+  /**
+   * Open a `.volt-request.json` or `.volt-collection.json` file and import
+   * the contained requests into the current collection.
+   * Name conflicts are resolved by appending `-1`, `-2`, etc.
+   */
+  private async handleImport(_correlationId: CorrelationId): Promise<void> {
+    if (!this.services.collection) {
+      void vscode.window.showWarningMessage('Volt: Open a folder to import requests.');
+      return;
+    }
+
+    try {
+      const uris = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: 'Import',
+        title: 'Import Volt Request or Collection',
+        filters: {
+          'Volt Files': ['volt-request.json', 'volt-collection.json'],
+          'JSON Files': ['json'],
+        },
+      });
+      if (!uris || uris.length === 0) return;
+
+      const uri = uris[0];
+      if (!uri) return;
+
+      const raw = fs.readFileSync(uri.fsPath, 'utf8');
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        void vscode.window.showErrorMessage('Volt: Invalid JSON in import file.');
+        return;
+      }
+
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !('type' in (parsed as object))
+      ) {
+        void vscode.window.showErrorMessage('Volt: Unrecognised import format (missing "type" field).');
+        return;
+      }
+
+      const importObj = parsed as Record<string, unknown>;
+      const importType = importObj['type'];
+
+      if (importType === 'request') {
+        const reqData = importObj['request'] as Record<string, unknown> | undefined;
+        if (!reqData || typeof reqData !== 'object') {
+          void vscode.window.showErrorMessage('Volt: Import file is missing "request" field.');
+          return;
+        }
+
+        const baseName = typeof reqData['name'] === 'string' && reqData['name']
+          ? reqData['name']
+          : 'imported-request';
+        const savePath = await this.resolveImportPath(baseName, false);
+        await this.saveImportedRequest(savePath, reqData);
+        void vscode.window.showInformationMessage(`Volt: Imported request "${baseName}".`);
+      } else if (importType === 'collection') {
+        const folderName = typeof importObj['folder'] === 'string' ? importObj['folder'] : 'imported';
+        const requests = Array.isArray(importObj['requests']) ? importObj['requests'] : [];
+        const resolvedFolder = await this.resolveImportPath(folderName, true);
+
+        await this.services.collection.createFolder(resolvedFolder);
+
+        for (const req of requests as unknown[]) {
+          if (!req || typeof req !== 'object') continue;
+          const r = req as Record<string, unknown>;
+          const reqName = typeof r['name'] === 'string' && r['name'] ? r['name'] : 'request';
+          const reqPath = `${resolvedFolder}/${reqName}`;
+          await this.saveImportedRequest(reqPath, r);
+        }
+
+        void vscode.window.showInformationMessage(
+          `Volt: Imported collection "${folderName}" (${requests.length} request${requests.length !== 1 ? 's' : ''}).`,
+        );
+      } else {
+        void vscode.window.showErrorMessage(`Volt: Unknown import type "${String(importType)}".`);
+        return;
+      }
+
+      // Refresh tree so new items appear immediately
+      this.treeRefresh?.();
+
+      // Notify webview with updated collection
+      try {
+        const updatedTree = await this.services.collection.loadTree();
+        this.send({ type: 'response:collection', correlationId: `import-${Date.now()}`, payload: updatedTree });
+      } catch {
+        // Non-critical — tree watcher will pick it up
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in import: ${message}`);
+      void vscode.window.showErrorMessage(`Volt: Import failed — ${message}`);
+    }
+  }
+
+  /**
+   * Resolve a name for import, appending `-1`, `-2`, etc. if the path already
+   * exists. Works for both request files and folders.
+   */
+  private async resolveImportPath(baseName: string, isFolder: boolean): Promise<string> {
+    // Sanitise name to safe chars (mirrors save-request validation)
+    const safeName = baseName.replace(/[^a-zA-Z0-9_/-]/g, '-').replace(/-+/g, '-');
+
+    if (!this.services.collection) return safeName;
+
+    if (isFolder) {
+      // Check by loading tree
+      const tree = await this.services.collection.loadTree();
+      const folderNames = new Set(
+        tree.nodes.filter((n) => n.kind === 'folder').map((n) => n.name),
+      );
+      if (!folderNames.has(safeName)) return safeName;
+
+      let suffix = 1;
+      while (folderNames.has(`${safeName}-${suffix}`)) suffix++;
+      return `${safeName}-${suffix}`;
+    } else {
+      // Check by attempting getRequest
+      if (!(await this.services.collection.getRequest(safeName))) return safeName;
+
+      let suffix = 1;
+      while (await this.services.collection.getRequest(`${safeName}-${suffix}`)) suffix++;
+      return `${safeName}-${suffix}`;
+    }
+  }
+
+  /**
+   * Save a raw imported request object as an HttpRequestDef.
+   */
+  private async saveImportedRequest(
+    savePath: string,
+    raw: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.services.collection) return;
+
+    const method = (typeof raw['method'] === 'string' ? raw['method'] : 'GET') as import('../shared/models').HttpMethod;
+    const url = typeof raw['url'] === 'string' ? raw['url'] : '';
+    const name = typeof raw['name'] === 'string' ? raw['name'] : savePath.split('/').pop() ?? savePath;
+
+    const headers: Record<string, string> = {};
+    if (raw['headers'] && typeof raw['headers'] === 'object') {
+      for (const [k, v] of Object.entries(raw['headers'] as Record<string, unknown>)) {
+        if (typeof v === 'string') headers[k] = v;
+      }
+    }
+
+    const queryParams: Array<{ key: string; value: string; enabled: boolean }> = [];
+    if (Array.isArray(raw['queryParams'])) {
+      for (const p of raw['queryParams'] as unknown[]) {
+        if (p && typeof p === 'object') {
+          const pp = p as Record<string, unknown>;
+          queryParams.push({
+            key: String(pp['key'] ?? ''),
+            value: String(pp['value'] ?? ''),
+            enabled: Boolean(pp['enabled'] ?? true),
+          });
+        }
+      }
+    }
+
+    let body: import('../shared/models').RequestBody | undefined;
+    if (raw['body'] && typeof raw['body'] === 'object') {
+      const b = raw['body'] as Record<string, unknown>;
+      const type = b['type'];
+      if (type === 'json' || type === 'text' || type === 'form-data') {
+        body = { type, content: typeof b['content'] === 'string' ? b['content'] : '' };
+      } else if (type === 'none') {
+        body = { type: 'none' };
+      }
+    }
+
+    const preScript = typeof raw['preScript'] === 'string' ? raw['preScript'] : undefined;
+    const postScript = typeof raw['postScript'] === 'string' ? raw['postScript'] : undefined;
+
+    const request: import('../shared/models').HttpRequestDef = {
+      id: savePath,
+      name,
+      method,
+      url,
+      headers,
+      queryParams,
+      ...(body !== undefined ? { body } : {}),
+      ...(preScript ? { preScript } : {}),
+      ...(postScript ? { postScript } : {}),
+    };
+
+    await this.services.collection.saveRequest(savePath, request);
+  }
+
+  /**
+   * Open a native save dialog and write content to the chosen file.
+   * Used by the webview "Save full response" action (REQ-RV-005).
+   * When `content` is a file:// URI or an absolute path to an existing file
+   * (large body offloaded to temp — H-07), the file is read and its contents
+   * are written instead of the path string.
+   */
+  private async handleSaveToFile(suggestedName: string, content: string): Promise<void> {
+    try {
+      // H-07: bodyRef case — content may be a file:// URI or absolute path
+      let actualContent = content;
+      const fsPath = content.startsWith('file:///')
+        ? content.replace(/^file:\/\/\//i, '').replace(/\//g, path.sep)
+        : content;
+      if (content.startsWith('file:///') || (path.isAbsolute(fsPath) && fs.existsSync(fsPath))) {
+        actualContent = fs.readFileSync(fsPath, 'utf8');
+      }
+
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(suggestedName),
+        filters: { 'All Files': ['*'] },
+      });
+      if (!uri) return; // User cancelled
+
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(actualContent, 'utf8'));
+      void vscode.window.showInformationMessage(`Volt: Response saved to ${uri.fsPath}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.output.appendLine(`[MessageRouter] ERROR in save-to-file: ${message}`);
+      void vscode.window.showErrorMessage(`Volt: Failed to save file — ${message}`);
     }
   }
 
