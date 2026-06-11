@@ -1,0 +1,23 @@
+# Development dependencies — not shipped in VSIX
+node_modules
+src
+**/*.test.ts
+**/*.spec.ts
+**/*.test.tsx
+**/*.spec.tsx
+tsconfig*.json
+esbuild.config.mjs
+vite.config.ts
+.eslintrc.cjs
+.prettierrc
+.editorconfig
+.gitignore
+vitest.config.ts
+openspec
+.atl
+
+# Source maps for production build (optional: remove if you want to ship them)
+dist/**/*.map
+
+# Docs
+*.md

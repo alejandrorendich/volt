@@ -1,0 +1,218 @@
+/**
+ * @fileoverview VS Code theme token mappings.
+ *
+ * Maps --vscode-* CSS variables to Volt design tokens.
+ * These tokens are consumed by all webview components. They adapt
+ * automatically to VS Code's active theme (light, dark, high-contrast).
+ *
+ * Convention: --volt-* are Volt's own tokens; --vscode-* are injected
+ * by the VS Code webview runtime.
+ */
+
+/* ---------------------------------------------------------------------------
+ * Reset / base
+ * --------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Color tokens — mapped from VS Code vars
+ * --------------------------------------------------------------------------- */
+:root {
+  /* Surface */
+  --volt-bg-base: var(--vscode-editor-background, #1e1e1e);
+  --volt-bg-surface: var(--vscode-sideBar-background, #252526);
+  --volt-bg-elevated: var(--vscode-editorWidget-background, #2d2d2d);
+  --volt-bg-hover: var(--vscode-list-hoverBackground, rgba(255,255,255,0.06));
+  --volt-bg-active: var(--vscode-list-activeSelectionBackground, #094771);
+
+  /* Borders */
+  --volt-border: var(--vscode-panel-border, rgba(128,128,128,0.35));
+  --volt-border-input: var(--vscode-input-border, rgba(128,128,128,0.5));
+  --volt-border-focus: var(--vscode-focusBorder, #007fd4);
+
+  /* Text */
+  --volt-fg-primary: var(--vscode-editor-foreground, #d4d4d4);
+  --volt-fg-secondary: var(--vscode-descriptionForeground, #9d9d9d);
+  --volt-fg-disabled: var(--vscode-disabledForeground, #5a5a5a);
+  --volt-fg-link: var(--vscode-textLink-foreground, #4daafc);
+  --volt-fg-error: var(--vscode-errorForeground, #f48771);
+
+  /* Input */
+  --volt-input-bg: var(--vscode-input-background, #3c3c3c);
+  --volt-input-fg: var(--vscode-input-foreground, #cccccc);
+  --volt-input-placeholder: var(--vscode-input-placeholderForeground, #6e6e6e);
+  --volt-input-border: var(--vscode-input-border, transparent);
+
+  /* Dropdown */
+  --volt-dropdown-bg: var(--vscode-dropdown-background, #3c3c3c);
+  --volt-dropdown-fg: var(--vscode-dropdown-foreground, #f0f0f0);
+  --volt-dropdown-border: var(--vscode-dropdown-border, rgba(128,128,128,0.4));
+
+  /* Button — primary */
+  --volt-btn-bg: var(--vscode-button-background, #0e639c);
+  --volt-btn-fg: var(--vscode-button-foreground, #ffffff);
+  --volt-btn-hover-bg: var(--vscode-button-hoverBackground, #1177bb);
+
+  /* Button — secondary */
+  --volt-btn-secondary-bg: var(--vscode-button-secondaryBackground, #3a3d41);
+  --volt-btn-secondary-fg: var(--vscode-button-secondaryForeground, #cccccc);
+  --volt-btn-secondary-hover-bg: var(--vscode-button-secondaryHoverBackground, #45494e);
+
+  /* Scrollbar */
+  --volt-scrollbar-thumb: var(--vscode-scrollbarSlider-background, rgba(100,100,100,0.4));
+  --volt-scrollbar-thumb-hover: var(--vscode-scrollbarSlider-hoverBackground, rgba(100,100,100,0.7));
+
+  /* Badge */
+  --volt-badge-bg: var(--vscode-badge-background, #4d4d4d);
+  --volt-badge-fg: var(--vscode-badge-foreground, #ffffff);
+
+  /* Notifications / messages */
+  --volt-info-bg: var(--vscode-inputValidation-infoBackground, #063b49);
+  --volt-warn-bg: var(--vscode-inputValidation-warningBackground, #352a05);
+  --volt-error-bg: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+
+  /* Font */
+  --volt-font-family: var(--vscode-font-family, 'Segoe UI', system-ui, sans-serif);
+  --volt-font-mono: var(--vscode-editor-font-family, 'Cascadia Code', 'Consolas', monospace);
+  --volt-font-size: var(--vscode-font-size, 13px);
+  --volt-font-size-sm: 11px;
+  --volt-font-size-lg: 15px;
+  --volt-line-height: var(--vscode-font-lineHeight, 1.4);
+
+  /* Spacing scale */
+  --volt-space-1: 2px;
+  --volt-space-2: 4px;
+  --volt-space-3: 6px;
+  --volt-space-4: 8px;
+  --volt-space-5: 12px;
+  --volt-space-6: 16px;
+  --volt-space-7: 20px;
+  --volt-space-8: 24px;
+
+  /* Radius */
+  --volt-radius-sm: 2px;
+  --volt-radius-md: 4px;
+  --volt-radius-lg: 6px;
+
+  /* Shadows */
+  --volt-shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+  --volt-shadow-md: 0 2px 8px rgba(0,0,0,0.4);
+
+  /* Status code colors */
+  --volt-status-2xx: #4ec994;
+  --volt-status-3xx: #4da6ff;
+  --volt-status-4xx: #ffb347;
+  --volt-status-5xx: #f48771;
+
+  /* HTTP method colors */
+  --volt-method-get: #4ec994;
+  --volt-method-post: #4da6ff;
+  --volt-method-put: #e2b863;
+  --volt-method-patch: #d7a3f0;
+  --volt-method-delete: #f48771;
+  --volt-method-head: #9cdcfe;
+  --volt-method-options: #9cdcfe;
+
+  /* Timing phase colors */
+  --volt-timing-dns: #4da6ff;
+  --volt-timing-tcp: #4ec994;
+  --volt-timing-tls: #d7a3f0;
+  --volt-timing-ttfb: #e2b863;
+  --volt-timing-body: #f48771;
+
+  /* Variable highlight */
+  --volt-var-fg: #ce9178;
+  --volt-var-bg: rgba(206,145,120,0.15);
+
+  /* Tabs */
+  --volt-tab-border: var(--vscode-panelTitle-activeBorder, #007fd4);
+  --volt-tab-active-fg: var(--vscode-panelTitle-activeForeground, #e8e8e8);
+  --volt-tab-inactive-fg: var(--vscode-panelTitle-inactiveForeground, #9d9d9d);
+
+  /* Layout */
+  --volt-panel-min-width: 280px;
+  --volt-toolbar-height: 40px;
+  --volt-tab-bar-height: 32px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Base document
+ * --------------------------------------------------------------------------- */
+html,
+body {
+  height: 100%;
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size);
+  line-height: var(--volt-line-height);
+  color: var(--volt-fg-primary);
+  background-color: var(--volt-bg-base);
+  overflow: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+ * Scrollbars (webkit)
+ * --------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--volt-scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--volt-scrollbar-thumb-hover);
+}
+
+/* ---------------------------------------------------------------------------
+ * Focus ring
+ * --------------------------------------------------------------------------- */
+:focus-visible {
+  outline: 1px solid var(--volt-border-focus);
+  outline-offset: -1px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Utility classes
+ * --------------------------------------------------------------------------- */
+.volt-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.volt-monospace {
+  font-family: var(--volt-font-mono);
+  font-size: 12px;
+}
+
+.volt-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

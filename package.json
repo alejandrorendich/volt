@@ -1,0 +1,172 @@
+{
+  "name": "volt",
+  "displayName": "Volt",
+  "description": "Fast, free HTTP client for VS Code",
+  "version": "0.1.0",
+  "publisher": "volt-dev",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["http", "rest", "api", "client", "requests"],
+  "activationEvents": [
+    "workspaceContains:.volt/collection.yaml",
+    "onCommand:volt.newRequest",
+    "onCommand:volt.openCollection",
+    "onCommand:volt.sendRequest",
+    "onCommand:volt.switchEnvironment",
+    "onCommand:volt.initCollection"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "volt.newRequest",
+        "title": "New Request",
+        "category": "Volt"
+      },
+      {
+        "command": "volt.openCollection",
+        "title": "Open Collection",
+        "category": "Volt"
+      },
+      {
+        "command": "volt.sendRequest",
+        "title": "Send Request",
+        "category": "Volt"
+      },
+      {
+        "command": "volt.switchEnvironment",
+        "title": "Switch Environment",
+        "category": "Volt"
+      },
+      {
+        "command": "volt.initCollection",
+        "title": "Initialize Collection",
+        "category": "Volt"
+      },
+      {
+        "command": "volt.refreshTree",
+        "title": "Refresh Collection Tree",
+        "category": "Volt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "volt.newRequestInFolder",
+        "title": "New Request",
+        "category": "Volt",
+        "icon": "$(add)"
+      },
+      {
+        "command": "volt.newFolder",
+        "title": "New Folder",
+        "category": "Volt",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "volt.deleteRequest",
+        "title": "Delete Request",
+        "category": "Volt"
+      },
+      {
+        "command": "volt.deleteFolder",
+        "title": "Delete Folder",
+        "category": "Volt"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "volt.refreshTree",
+          "when": "view == volt.collectionTree",
+          "group": "navigation"
+        },
+        {
+          "command": "volt.newFolder",
+          "when": "view == volt.collectionTree",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "volt.newRequestInFolder",
+          "when": "view == volt.collectionTree && viewItem == voltFolder",
+          "group": "inline"
+        },
+        {
+          "command": "volt.deleteRequest",
+          "when": "view == volt.collectionTree && viewItem == voltRequest",
+          "group": "modify"
+        },
+        {
+          "command": "volt.deleteFolder",
+          "when": "view == volt.collectionTree && viewItem == voltFolder",
+          "group": "modify"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "volt-sidebar",
+          "title": "Volt",
+          "icon": "$(zap)"
+        }
+      ]
+    },
+    "views": {
+      "volt-sidebar": [
+        {
+          "id": "volt.collectionTree",
+          "name": "Collections",
+          "when": "true"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "npm run build:ext && npm run build:webview",
+    "build:ext": "node esbuild.config.mjs",
+    "build:webview": "vite build",
+    "dev": "npm run watch:ext & npm run watch:webview",
+    "watch": "npm run watch:ext & npm run watch:webview",
+    "watch:ext": "node esbuild.config.mjs --watch",
+    "watch:webview": "vite build --watch",
+    "package": "vsce package --no-dependencies",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.extension.json && tsc --noEmit -p tsconfig.webview.json",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "undici": "^6.19.2",
+    "js-yaml": "^4.1.0",
+    "ajv": "^8.17.1",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^18.19.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "esbuild": "^0.23.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.5",
+    "vitest": "^2.0.5"
+  }
+}

@@ -1,0 +1,360 @@
+/**
+ * @fileoverview ResponseViewer component styles.
+ */
+
+/* ---------------------------------------------------------------------------
+ * Root
+ * --------------------------------------------------------------------------- */
+.rv-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--volt-bg-base);
+}
+
+.rv-root--empty,
+.rv-root--loading,
+.rv-root--error {
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * State displays
+ * --------------------------------------------------------------------------- */
+.rv-empty-state,
+.rv-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--volt-space-4);
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size);
+}
+
+.rv-empty-state__icon {
+  font-size: 36px;
+  opacity: 0.3;
+}
+
+.rv-loading-state__spinner {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--volt-btn-bg);
+  border-radius: 50%;
+  animation: rv-spin 0.8s linear infinite;
+}
+
+@keyframes rv-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error state */
+.rv-error-state {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--volt-space-5);
+  max-width: 400px;
+  padding: var(--volt-space-6);
+  background: var(--volt-error-bg);
+  border-radius: var(--volt-radius-lg);
+  border: 1px solid rgba(244,135,113,0.3);
+}
+
+.rv-error-state__icon {
+  font-size: 24px;
+  color: var(--volt-fg-error);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.rv-error-state__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--volt-space-2);
+}
+
+.rv-error-state__content strong {
+  color: var(--volt-fg-error);
+  text-transform: capitalize;
+}
+
+.rv-error-state__content span {
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size-sm);
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------------------
+ * Status bar
+ * --------------------------------------------------------------------------- */
+.rv-status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-4);
+  padding: var(--volt-space-3) var(--volt-space-5);
+  border-bottom: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  flex-shrink: 0;
+  min-height: var(--volt-toolbar-height);
+  flex-wrap: wrap;
+}
+
+/* Status badge */
+.rv-status-badge {
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size-sm);
+  font-weight: 700;
+  padding: var(--volt-space-1) var(--volt-space-4);
+  border-radius: var(--volt-radius-md);
+  letter-spacing: 0.02em;
+}
+
+.rv-status-badge--success {
+  background: rgba(78, 201, 148, 0.15);
+  color: var(--volt-status-2xx);
+  border: 1px solid rgba(78, 201, 148, 0.3);
+}
+
+.rv-status-badge--redirect {
+  background: rgba(77, 166, 255, 0.15);
+  color: var(--volt-status-3xx);
+  border: 1px solid rgba(77, 166, 255, 0.3);
+}
+
+.rv-status-badge--client-error {
+  background: rgba(255, 179, 71, 0.15);
+  color: var(--volt-status-4xx);
+  border: 1px solid rgba(255, 179, 71, 0.3);
+}
+
+.rv-status-badge--server-error {
+  background: rgba(244, 135, 113, 0.15);
+  color: var(--volt-status-5xx);
+  border: 1px solid rgba(244, 135, 113, 0.3);
+}
+
+.rv-status-badge--unknown {
+  background: var(--volt-badge-bg);
+  color: var(--volt-badge-fg);
+}
+
+/* Metadata */
+.rv-meta-item {
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size-sm);
+  font-family: var(--volt-font-mono);
+}
+
+.rv-meta-separator {
+  color: var(--volt-fg-disabled);
+}
+
+/* Actions */
+.rv-actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--volt-space-3);
+}
+
+.rv-action-btn {
+  background: var(--volt-btn-secondary-bg);
+  color: var(--volt-btn-secondary-fg);
+  border: 1px solid var(--volt-border);
+  border-radius: var(--volt-radius-sm);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size-sm);
+  padding: var(--volt-space-1) var(--volt-space-4);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.rv-action-btn:hover {
+  background: var(--volt-btn-secondary-hover-bg);
+}
+
+/* ---------------------------------------------------------------------------
+ * Tabs
+ * --------------------------------------------------------------------------- */
+.rv-tabs {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 var(--volt-space-5);
+  border-bottom: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  flex-shrink: 0;
+  height: var(--volt-tab-bar-height);
+  gap: 0;
+}
+
+.rv-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--volt-tab-inactive-fg);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size);
+  padding: 0 var(--volt-space-5);
+  height: 100%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  white-space: nowrap;
+  transition: color 0.1s;
+}
+
+.rv-tab:hover {
+  color: var(--volt-fg-primary);
+}
+
+.rv-tab--active {
+  color: var(--volt-tab-active-fg);
+  border-bottom-color: var(--volt-tab-border);
+}
+
+.rv-badge {
+  background: var(--volt-badge-bg);
+  color: var(--volt-badge-fg);
+  font-size: var(--volt-font-size-sm);
+  font-weight: 600;
+  padding: 0 var(--volt-space-2);
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------------------
+ * Panel area
+ * --------------------------------------------------------------------------- */
+.rv-panel-area {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.rv-panel {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.rv-panel[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Body display
+ * --------------------------------------------------------------------------- */
+.rv-body-raw {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.rv-body-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-4);
+  padding: var(--volt-space-3) var(--volt-space-5);
+  background: var(--volt-warn-bg);
+  border-bottom: 1px solid var(--volt-border);
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-primary);
+  flex-shrink: 0;
+}
+
+.rv-body-pre {
+  flex: 1;
+  margin: 0;
+  padding: var(--volt-space-5);
+  font-family: var(--volt-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--volt-fg-primary);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* JSON syntax highlighting */
+.rv-json-key    { color: #9cdcfe; }
+.rv-json-string { color: #ce9178; }
+.rv-json-number { color: #b5cea8; }
+.rv-json-bool   { color: #569cd6; }
+.rv-json-null   { color: #569cd6; }
+
+.rv-body-binary {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--volt-space-5);
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size);
+}
+
+.rv-body-binary__icon {
+  font-size: 36px;
+  opacity: 0.4;
+}
+
+/* ---------------------------------------------------------------------------
+ * Headers table
+ * --------------------------------------------------------------------------- */
+.rv-headers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--volt-font-size-sm);
+}
+
+.rv-headers-table thead tr {
+  background: var(--volt-bg-surface);
+  border-bottom: 1px solid var(--volt-border);
+}
+
+.rv-headers-table th {
+  text-align: left;
+  padding: var(--volt-space-2) var(--volt-space-5);
+  color: var(--volt-fg-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: var(--volt-font-size-sm);
+}
+
+.rv-headers-table tbody tr {
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.rv-headers-table tbody tr:hover {
+  background: var(--volt-bg-hover);
+}
+
+.rv-header-key {
+  padding: var(--volt-space-2) var(--volt-space-5);
+  font-family: var(--volt-font-mono);
+  color: #9cdcfe;
+  width: 40%;
+  vertical-align: top;
+  word-break: break-all;
+}
+
+.rv-header-value {
+  padding: var(--volt-space-2) var(--volt-space-5);
+  font-family: var(--volt-font-mono);
+  color: var(--volt-fg-primary);
+  word-break: break-all;
+}
+
+/* Misc */
+.rv-empty-hint {
+  padding: var(--volt-space-6);
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size-sm);
+  text-align: center;
+}

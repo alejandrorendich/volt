@@ -1,0 +1,101 @@
+# SDD Configuration — Volt (janoclient)
+# Initialized: 2026-06-10
+# Mode: openspec
+
+project:
+  name: janoclient
+  product: Volt
+  description: >
+    VS Code extension — full HTTP client (Postman/Thunder Client alternative,
+    fully free). Webview-based UI, file-based collections (git-versionable),
+    environment variables, pre/post request scripts, always-live responses
+    (no response caching).
+  stack:
+    platform: vscode-extension
+    language: TypeScript
+    runtime: Node.js
+    ui: VS Code Webview API
+    persistence: file-based (JSON/YAML collections on disk)
+  initialized: "2026-06-10"
+
+persistence:
+  mode: openspec
+  paths:
+    specs: openspec/specs/
+    changes: openspec/changes/
+    archive: openspec/changes/archive/
+
+strict_tdd: false
+strict_tdd_reason: >
+  No test runner detected. Project is greenfield — no package.json, no test
+  framework configured. Set strict_tdd to true once Vitest (or Jest) is
+  added to the project.
+
+testing:
+  detected: "2026-06-10"
+  runner:
+    available: false
+    command: ~
+    framework: ~
+  layers:
+    unit:
+      available: false
+      tool: ~
+      note: "Add Vitest once package.json is scaffolded"
+    integration:
+      available: false
+      tool: ~
+      note: "Consider @vscode/test-electron for extension integration tests"
+    e2e:
+      available: false
+      tool: ~
+      note: "Consider @vscode/test-electron or playwright-vscode"
+  coverage:
+    available: false
+    command: ~
+  quality:
+    linter:
+      available: false
+      command: ~
+      note: "Add ESLint with @typescript-eslint"
+    type_checker:
+      available: false
+      command: ~
+      note: "TypeScript tsc --noEmit once tsconfig.json exists"
+    formatter:
+      available: false
+      command: ~
+      note: "Add Prettier"
+
+phases:
+  propose:
+    skill: sdd-propose
+    output: openspec/changes/{change-id}/proposal.md
+  spec:
+    skill: sdd-spec
+    output: openspec/changes/{change-id}/spec.md
+  design:
+    skill: sdd-design
+    output: openspec/changes/{change-id}/design.md
+  tasks:
+    skill: sdd-tasks
+    output: openspec/changes/{change-id}/tasks.md
+  apply:
+    skill: sdd-apply
+    reads: [proposal.md, spec.md, design.md, tasks.md]
+  verify:
+    skill: sdd-verify
+    reads: [spec.md, design.md, tasks.md]
+  archive:
+    skill: sdd-archive
+    output: openspec/changes/archive/{change-id}/
+
+architecture:
+  extension_entry: src/extension.ts
+  webview_entry: src/webview/
+  collections_root: ~/.volt/collections/   # user-configurable
+  environments_root: ~/.volt/environments/ # user-configurable
+  no_response_cache: true
+  scripts:
+    pre_request: true
+    post_request: true

@@ -1,0 +1,62 @@
+/**
+ * @fileoverview App layout styles.
+ */
+
+/* ---------------------------------------------------------------------------
+ * App shell
+ * --------------------------------------------------------------------------- */
+.volt-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--volt-bg-base);
+  color: var(--volt-fg-primary);
+}
+
+/* ---------------------------------------------------------------------------
+ * Split pane
+ * --------------------------------------------------------------------------- */
+.volt-split {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.volt-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.volt-panel--builder {
+  flex: 1 1 50%;
+  min-width: var(--volt-panel-min-width);
+}
+
+.volt-panel--response {
+  flex: 1 1 50%;
+  min-width: var(--volt-panel-min-width);
+}
+
+.volt-split__divider {
+  width: 1px;
+  background: var(--volt-border);
+  flex-shrink: 0;
+  cursor: col-resize;
+}
+
+/* Narrow sidebar: stack vertically below 600px */
+@media (max-width: 600px) {
+  .volt-split {
+    flex-direction: column;
+  }
+
+  .volt-split__divider {
+    width: 100%;
+    height: 1px;
+    cursor: row-resize;
+  }
+}

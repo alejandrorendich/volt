@@ -1,0 +1,286 @@
+/**
+ * @fileoverview KeyValueEditor component styles.
+ */
+
+/* ---------------------------------------------------------------------------
+ * Container
+ * --------------------------------------------------------------------------- */
+.kv-editor {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  font-size: var(--volt-font-size);
+}
+
+/* ---------------------------------------------------------------------------
+ * Header row
+ * --------------------------------------------------------------------------- */
+.kv-header {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--volt-space-4) var(--volt-space-2);
+  border-bottom: 1px solid var(--volt-border);
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  gap: var(--volt-space-2);
+}
+
+.kv-header__toggle {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.kv-header__key {
+  flex: 0 0 38%;
+  min-width: 0;
+}
+
+.kv-header__value {
+  flex: 1;
+  min-width: 0;
+}
+
+.kv-bulk-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--volt-border);
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size-sm);
+  padding: 1px var(--volt-space-3);
+  border-radius: var(--volt-radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.kv-bulk-btn:hover:not(:disabled) {
+  background: var(--volt-bg-hover);
+  color: var(--volt-fg-primary);
+}
+
+.kv-bulk-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------------------
+ * Rows container
+ * --------------------------------------------------------------------------- */
+.kv-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------------------------
+ * Single row
+ * --------------------------------------------------------------------------- */
+.kv-row {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.kv-row:hover {
+  background: var(--volt-bg-hover);
+}
+
+.kv-row--disabled {
+  opacity: 0.5;
+}
+
+/* ---------------------------------------------------------------------------
+ * Toggle
+ * --------------------------------------------------------------------------- */
+.volt-sr-only-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.kv-toggle__input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.kv-toggle__visual {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--volt-border-input);
+  border-radius: var(--volt-radius-sm);
+  background: var(--volt-input-bg);
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.kv-toggle__input:checked + .kv-toggle__visual {
+  background: var(--volt-btn-bg);
+  border-color: var(--volt-btn-bg);
+}
+
+.kv-toggle__input:checked + .kv-toggle__visual::after {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 4px;
+  border-left: 1.5px solid #fff;
+  border-bottom: 1.5px solid #fff;
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+/* ---------------------------------------------------------------------------
+ * Cells
+ * --------------------------------------------------------------------------- */
+.kv-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.kv-cell--key {
+  flex: 0 0 38%;
+}
+
+.kv-cell--value {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Inputs
+ * --------------------------------------------------------------------------- */
+.kv-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--volt-input-fg);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size);
+  padding: var(--volt-space-1) var(--volt-space-3);
+  border-radius: var(--volt-radius-sm);
+  outline: none;
+}
+
+.kv-input:hover {
+  border-color: var(--volt-border-input);
+  background: var(--volt-input-bg);
+}
+
+.kv-input:focus {
+  border-color: var(--volt-border-focus);
+  background: var(--volt-input-bg);
+}
+
+.kv-input::placeholder {
+  color: var(--volt-input-placeholder);
+}
+
+.kv-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------------------
+ * Value with variable highlight
+ * --------------------------------------------------------------------------- */
+.kv-value-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.kv-value-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size);
+  padding: var(--volt-space-1) var(--volt-space-3);
+  white-space: pre;
+  overflow: hidden;
+  color: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--volt-radius-sm);
+}
+
+.kv-var {
+  background: var(--volt-var-bg);
+  color: var(--volt-var-fg);
+  border-radius: 2px;
+  font-style: normal;
+}
+
+.kv-input--value {
+  position: relative;
+  background: transparent;
+  /* transparent text when highlight is active — but keep cursor visible */
+  caret-color: var(--volt-input-fg);
+}
+
+/* ---------------------------------------------------------------------------
+ * Delete button
+ * --------------------------------------------------------------------------- */
+.kv-delete {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  color: var(--volt-fg-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--volt-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.kv-row:hover .kv-delete {
+  opacity: 1;
+}
+
+.kv-delete:hover:not(:disabled) {
+  color: var(--volt-fg-error);
+  background: var(--volt-error-bg);
+}
+
+.kv-delete:disabled {
+  opacity: 0;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+ * Bulk textarea
+ * --------------------------------------------------------------------------- */
+.kv-bulk-textarea {
+  width: 100%;
+  background: var(--volt-input-bg);
+  color: var(--volt-input-fg);
+  border: 1px solid var(--volt-border-input);
+  border-radius: var(--volt-radius-sm);
+  font-family: var(--volt-font-mono);
+  font-size: 12px;
+  padding: var(--volt-space-4);
+  resize: vertical;
+  outline: none;
+  line-height: 1.5;
+}
+
+.kv-bulk-textarea:focus {
+  border-color: var(--volt-border-focus);
+}

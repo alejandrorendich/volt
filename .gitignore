@@ -1,0 +1,21 @@
+# Production dependencies bundled by esbuild — do not ship separately
+node_modules
+
+# Build outputs
+dist
+out
+
+# VS Code extension package
+*.vsix
+
+# Secrets and local environment overrides
+.secrets.local.yaml
+.volt/envs/*.local.yaml
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor-specific
+.vscode-test/
+*.log

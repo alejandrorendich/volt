@@ -1,0 +1,337 @@
+/**
+ * @fileoverview RequestBuilder component styles.
+ */
+
+/* ---------------------------------------------------------------------------
+ * Root
+ * --------------------------------------------------------------------------- */
+.rb-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--volt-bg-base);
+}
+
+/* ---------------------------------------------------------------------------
+ * Toolbar (method + URL + send)
+ * --------------------------------------------------------------------------- */
+.rb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-4) var(--volt-space-5);
+  border-bottom: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  min-height: var(--volt-toolbar-height);
+  flex-shrink: 0;
+}
+
+/* Method select */
+.rb-method {
+  background: var(--volt-dropdown-bg);
+  color: var(--method-color, var(--volt-fg-primary));
+  border: 1px solid var(--volt-dropdown-border);
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size-sm);
+  font-weight: 700;
+  padding: var(--volt-space-2) var(--volt-space-3);
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  min-width: 80px;
+  letter-spacing: 0.05em;
+}
+
+.rb-method:focus-visible {
+  border-color: var(--volt-border-focus);
+}
+
+/* URL area */
+.rb-url-container {
+  flex: 1;
+  min-width: 0;
+}
+
+.rb-url-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.rb-url-highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  white-space: pre;
+  overflow: hidden;
+  color: transparent;
+  border-radius: var(--volt-radius-md);
+  border: 1px solid transparent;
+}
+
+.rb-url-var {
+  background: var(--volt-var-bg);
+  color: var(--volt-var-fg);
+  border-radius: 2px;
+  font-style: normal;
+}
+
+.rb-url-input {
+  width: 100%;
+  background: var(--volt-input-bg);
+  color: var(--volt-input-fg);
+  border: 1px solid var(--volt-input-border);
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-mono);
+  font-size: var(--volt-font-size);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  outline: none;
+  caret-color: var(--volt-input-fg);
+  position: relative;
+  background: transparent;
+}
+
+.rb-url-wrap:hover .rb-url-input {
+  background: var(--volt-input-bg);
+  border-color: var(--volt-border-input);
+}
+
+.rb-url-wrap .rb-url-input:focus {
+  background: var(--volt-input-bg);
+  border-color: var(--volt-border-focus);
+}
+
+.rb-url-input::placeholder {
+  color: var(--volt-input-placeholder);
+}
+
+/* Send / Cancel button */
+.rb-send {
+  background: var(--volt-btn-bg);
+  color: var(--volt-btn-fg);
+  border: none;
+  border-radius: var(--volt-radius-md);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size);
+  font-weight: 600;
+  padding: var(--volt-space-2) var(--volt-space-6);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-3);
+  min-width: 72px;
+  justify-content: center;
+  transition: background 0.1s;
+}
+
+.rb-send:hover:not(:disabled) {
+  background: var(--volt-btn-hover-bg);
+}
+
+.rb-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rb-send--cancel {
+  background: var(--volt-btn-secondary-bg);
+  color: var(--volt-btn-secondary-fg);
+}
+
+.rb-send--cancel:hover:not(:disabled) {
+  background: var(--volt-btn-secondary-hover-bg);
+}
+
+/* Spinner */
+.rb-send__spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: rb-spin 0.6s linear infinite;
+}
+
+@keyframes rb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------------------------------------------------------------------------
+ * Tabs
+ * --------------------------------------------------------------------------- */
+.rb-tabs {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 var(--volt-space-5);
+  border-bottom: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  flex-shrink: 0;
+  height: var(--volt-tab-bar-height);
+  gap: 0;
+}
+
+.rb-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--volt-tab-inactive-fg);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size);
+  padding: 0 var(--volt-space-5);
+  height: 100%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  white-space: nowrap;
+  transition: color 0.1s;
+}
+
+.rb-tab:hover {
+  color: var(--volt-fg-primary);
+}
+
+.rb-tab--active {
+  color: var(--volt-tab-active-fg);
+  border-bottom-color: var(--volt-tab-border);
+}
+
+.rb-badge {
+  background: var(--volt-badge-bg);
+  color: var(--volt-badge-fg);
+  font-size: var(--volt-font-size-sm);
+  font-weight: 600;
+  padding: 0 var(--volt-space-2);
+  border-radius: 8px;
+  min-width: 16px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------------------
+ * Panel area
+ * --------------------------------------------------------------------------- */
+.rb-panel-area {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.rb-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--volt-space-3) 0;
+}
+
+.rb-panel[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Body editor
+ * --------------------------------------------------------------------------- */
+.rb-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.rb-body-type-bar {
+  display: flex;
+  gap: 1px;
+  padding: var(--volt-space-3) var(--volt-space-5);
+  border-bottom: 1px solid var(--volt-border);
+  flex-shrink: 0;
+}
+
+.rb-body-type-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--volt-fg-secondary);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size-sm);
+  padding: var(--volt-space-1) var(--volt-space-4);
+  border-radius: var(--volt-radius-sm);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.rb-body-type-btn:hover {
+  color: var(--volt-fg-primary);
+  background: var(--volt-bg-hover);
+}
+
+.rb-body-type-btn--active {
+  color: var(--volt-tab-active-fg);
+  border-color: var(--volt-border-input);
+  background: var(--volt-bg-elevated);
+}
+
+.rb-body-none {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size-sm);
+}
+
+.rb-body-raw {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--volt-space-3);
+}
+
+.rb-body-textarea {
+  flex: 1;
+  background: var(--volt-input-bg);
+  color: var(--volt-input-fg);
+  border: 1px solid var(--volt-border-input);
+  border-radius: var(--volt-radius-md);
+  padding: var(--volt-space-4);
+  resize: none;
+  outline: none;
+  font-size: 12px;
+  line-height: 1.5;
+  min-height: 120px;
+}
+
+.rb-body-textarea:focus {
+  border-color: var(--volt-border-focus);
+}
+
+.rb-body-textarea--error {
+  border-color: var(--volt-fg-error) !important;
+}
+
+.rb-body-json-error {
+  margin-top: var(--volt-space-2);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  background: var(--volt-error-bg);
+  color: var(--volt-fg-error);
+  font-size: var(--volt-font-size-sm);
+  border-radius: var(--volt-radius-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-3);
+}
+
+.rb-body-disabled {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--volt-space-3);
+  color: var(--volt-fg-secondary);
+  font-size: var(--volt-font-size-sm);
+}
