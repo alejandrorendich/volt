@@ -70,6 +70,10 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
       this.webviewOptions(),
     );
 
+    // Set panel icon (bolt/lightning)
+    const iconPath = vscode.Uri.joinPath(this.extensionUri, 'media', 'bolt.svg');
+    this.panel.iconPath = iconPath;
+
     this.initPanel(this.panel);
   }
 
