@@ -63,12 +63,12 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: Webview UI (~400 lines)
 
-- [ ] 5.1 Create `src/webview/main.tsx`, `src/webview/App.tsx` — React 18 entry, split-pane layout (builder left, response right), VS Code theme CSS variables.
-- [ ] 5.2 Create `src/webview/styles/tokens.css` — map `--vscode-*` to design tokens. Create `src/webview/hooks/useMessage.ts` — postMessage send/subscribe with timeout (30s). Satisfies REQ-MSG-004, REQ-MSG-005.
-- [ ] 5.3 Create `src/webview/stores/` — `request-store.ts`, `response-store.ts`, `collection-store.ts`, `env-store.ts` (Zustand slices).
-- [ ] 5.4 Create `src/webview/components/RequestBuilder.tsx` — method dropdown, URL input with `{{var}}` highlight, headers table, body editor (JSON/text/none), query params table, Send/Cancel button. Satisfies REQ-RB-001 through REQ-RB-006.
-- [ ] 5.5 Create `src/webview/components/ResponseViewer.tsx` — status badge (color-coded), body with syntax highlighting, headers table, empty/loading/error states. Satisfies REQ-RV-001, REQ-RV-002, REQ-RV-003, REQ-RV-006.
-- [ ] 5.6 Create `src/webview/components/TimingBar.tsx` — horizontal stacked bar chart (DNS/TCP/TLS/TTFB/Download), hover tooltips with ms values. Satisfies REQ-RV-004.
+- [x] 5.1 Create `src/webview/main.tsx`, `src/webview/App.tsx` — React 18 entry, split-pane layout (builder left, response right), VS Code theme CSS variables.
+- [x] 5.2 Create `src/webview/styles/tokens.css` — map `--vscode-*` to design tokens. Create `src/webview/hooks/useMessage.ts` — postMessage send/subscribe with timeout (30s). Satisfies REQ-MSG-004, REQ-MSG-005.
+- [x] 5.3 Create `src/webview/stores/` — `request-store.ts`, `response-store.ts`, `collection-store.ts`, `env-store.ts` (Zustand slices).
+- [x] 5.4 Create `src/webview/components/RequestBuilder.tsx` — method dropdown, URL input with `{{var}}` highlight, headers table, body editor (JSON/text/none), query params table, Send/Cancel button. Satisfies REQ-RB-001 through REQ-RB-006.
+- [x] 5.5 Create `src/webview/components/ResponseViewer.tsx` — status badge (color-coded), body with syntax highlighting, headers table, empty/loading/error states. Satisfies REQ-RV-001, REQ-RV-002, REQ-RV-003, REQ-RV-006.
+- [x] 5.6 Create `src/webview/components/TimingBar.tsx` — horizontal stacked bar chart (DNS/TCP/TLS/TTFB/Download), hover tooltips with ms values. Satisfies REQ-RV-004.
 
 ## Phase 6: Integration + Polish (~350 lines)
 
