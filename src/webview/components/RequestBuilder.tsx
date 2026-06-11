@@ -550,6 +550,8 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const toRequestDef = useRequestStore((s) => s.toRequestDef);
   const streamingPhase = useRequestStore((s) => s.streamingPhase);
   const savePath = useRequestStore((s) => s.savePath);
+  const sslVerify = useRequestStore((s) => s.sslVerify);
+  const setSslVerify = useRequestStore((s) => s.setSslVerify);
 
   // History tab state — local to avoid touching store snapshot machinery
   const [activeLocalTab, setActiveLocalTab] = useState<'store' | 'history'>('store');
@@ -707,6 +709,18 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
 
         {/* Save button */}
         <SaveButton />
+
+        {/* SSL verification toggle */}
+        <label className="rb-ssl-toggle" title="Toggle TLS certificate verification">
+          <input
+            type="checkbox"
+            className="rb-ssl-toggle__checkbox"
+            checked={sslVerify}
+            onChange={(e) => setSslVerify(e.target.checked)}
+            aria-label="Verify SSL certificate"
+          />
+          <span className="rb-ssl-toggle__label">SSL</span>
+        </label>
       </div>
 
       {/* Streaming progress indicator (REQ-MSG-003) */}

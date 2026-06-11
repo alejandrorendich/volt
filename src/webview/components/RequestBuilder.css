@@ -646,3 +646,32 @@
   color: var(--volt-fg-error, #f14c4c);
   background: rgba(241, 76, 76, 0.08);
 }
+
+/* ---------------------------------------------------------------------------
+ * SSL toggle (F-05)
+ * --------------------------------------------------------------------------- */
+.rb-ssl-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.rb-ssl-toggle__checkbox {
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+  accent-color: var(--volt-btn-bg);
+}
+
+.rb-ssl-toggle__label {
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-secondary);
+  white-space: nowrap;
+}
+
+.rb-ssl-toggle:hover .rb-ssl-toggle__label {
+  color: var(--volt-fg-primary);
+}

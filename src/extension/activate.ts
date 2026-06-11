@@ -22,6 +22,7 @@ import { EnvironmentService } from './services/environment-service';
 import { CollectionService } from './services/collection-service';
 import { HistoryService } from './services/history-service';
 import { importPostmanCollection } from './services/postman-import';
+import { buildCurlCommand } from './utils/curl';
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -169,7 +170,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // volt.sendRequest — focus the panel and trigger a send (Phase 6 wires the full flow)
+  // volt.sendRequest — focus the panel so the webview's Ctrl+Enter handler fires.
+  // The actual HTTP send is handled inside the webview: the keybinding
+  // (when: voltPanelFocused) triggers a postMessage which the webview
+  // intercepts and routes to its internal RequestBuilder send handler.
+  // Opening the panel here ensures the webview is focused so the keybinding
+  // conditions are met.
   context.subscriptions.push(
     vscode.commands.registerCommand('volt.sendRequest', () => {
       output.appendLine('[Volt] Command: volt.sendRequest');
@@ -504,6 +510,77 @@ export function activate(context: vscode.ExtensionContext): void {
         treeProvider.refresh();
       } catch (err: unknown) {
         output.appendLine(`[Volt] ERROR in duplicateFolder: ${String(err)}`);
+      }
+    }),
+  );
+
+  // volt.renameRequest — rename a request YAML file from the tree context menu
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.renameRequest', async (item: unknown) => {
+      output.appendLine('[Volt] Command: volt.renameRequest');
+      if (!collectionService) return;
+      if (!item || typeof item !== 'object' || !('requestPath' in item)) return;
+      const relPath = String((item as { requestPath: unknown }).requestPath);
+
+      // Current base name (no folder prefix) used as default in the input box
+      const currentName = relPath.split('/').pop() ?? relPath;
+
+      const newName = await vscode.window.showInputBox({
+        prompt: 'New request name',
+        value: currentName,
+        valueSelection: [0, currentName.length],
+        validateInput: (value) => {
+          if (!value || value.trim() === '') return 'Name cannot be empty';
+          if (/[/\\]/.test(value)) return 'Name cannot contain path separators';
+          return undefined;
+        },
+      });
+
+      if (!newName || newName.trim() === '' || newName.trim() === currentName) return;
+
+      // Build new path: keep folder prefix if present
+      const folderPrefix = relPath.includes('/')
+        ? relPath.slice(0, relPath.lastIndexOf('/') + 1)
+        : '';
+      const newRelPath = `${folderPrefix}${newName.trim()}`;
+
+      try {
+        await collectionService.renameRequest(relPath, newRelPath);
+        treeProvider.refresh();
+        // If the renamed request was open in the webview, push the updated definition
+        setTimeout(() => router.pushRequest(newRelPath), 100);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[Volt] ERROR in renameRequest: ${msg}`);
+        await vscode.window.showErrorMessage(`Volt: ${msg}`);
+      }
+    }),
+  );
+
+  // volt.copyAsCurl — build a cURL command from a saved request and copy to clipboard
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.copyAsCurl', async (item: unknown) => {
+      output.appendLine('[Volt] Command: volt.copyAsCurl');
+      if (!collectionService) return;
+      if (!item || typeof item !== 'object' || !('requestPath' in item)) return;
+      const relPath = String((item as { requestPath: unknown }).requestPath);
+
+      try {
+        const request = await collectionService.loadRequest(relPath);
+
+        // Resolve environment variables if environment service is available
+        let resolved = request;
+        if (environmentService && typeof environmentService.resolveRequest === 'function') {
+          resolved = await environmentService.resolveRequest(request) ?? request;
+        }
+
+        const curlCmd = buildCurlCommand(resolved);
+        await vscode.env.clipboard.writeText(curlCmd);
+        await vscode.window.showInformationMessage('Volt: cURL copied to clipboard.');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[Volt] ERROR in copyAsCurl: ${msg}`);
+        await vscode.window.showErrorMessage(`Volt: Failed to copy as cURL — ${msg}`);
       }
     }),
   );

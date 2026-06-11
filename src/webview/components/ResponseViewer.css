@@ -384,3 +384,49 @@
   font-size: var(--volt-font-size-sm);
   font-style: italic;
 }
+
+/* ---------------------------------------------------------------------------
+ * Search bar (F-03)
+ * --------------------------------------------------------------------------- */
+.rv-search {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  border-bottom: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  flex-shrink: 0;
+}
+
+.rv-search__input {
+  flex: 1;
+  background: var(--volt-input-bg, var(--volt-bg-base));
+  border: 1px solid var(--volt-border);
+  border-radius: var(--volt-radius-sm);
+  color: var(--volt-fg-primary);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size-sm);
+  padding: var(--volt-space-1) var(--volt-space-3);
+  outline: none;
+  min-width: 0;
+}
+
+.rv-search__input:focus {
+  border-color: var(--volt-btn-bg);
+}
+
+.rv-search__count {
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Search highlight mark */
+mark.rv-search-mark {
+  background: rgba(255, 210, 0, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  outline: 1px solid rgba(255, 210, 0, 0.5);
+}

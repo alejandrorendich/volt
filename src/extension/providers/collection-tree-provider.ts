@@ -208,6 +208,7 @@ export class CollectionTreeProvider
 
     const targetFolderName = target?.kind === 'folder' ? (target.label as string) : undefined;
 
+    let moved = false;
     for (const relPath of paths) {
       if (!relPath) continue;
 
@@ -223,6 +224,7 @@ export class CollectionTreeProvider
           await this.collectionService.saveRequest(newRelPath, request);
           // Delete the old file
           await this.collectionService.deleteRequest(relPath);
+          moved = true;
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -232,7 +234,10 @@ export class CollectionTreeProvider
       }
     }
 
-    this.refresh();
+    // Only refresh the tree when at least one item was actually moved
+    if (moved) {
+      this.refresh();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -345,15 +350,20 @@ function makePlaceholder(message: string): VoltTreeItem {
 }
 
 /**
- * Find a folder node by name in the top-level nodes list.
- * (Shallow search — folders are at the root of the tree for now.)
+ * Find a folder node by name recursively in the tree nodes list.
+ * Searches depth-first through nested folder children.
  */
 function findFolderByName(
   nodes: readonly CollectionTreeNode[],
   name: string,
 ): CollectionFolderItem | undefined {
   for (const node of nodes) {
-    if (node.kind === 'folder' && node.name === name) return node;
+    if (node.kind === 'folder') {
+      if (node.name === name) return node;
+      // Recurse into nested folders
+      const found = findFolderByName(node.children, name);
+      if (found) return found;
+    }
   }
   return undefined;
 }

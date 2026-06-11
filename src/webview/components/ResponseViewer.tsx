@@ -7,7 +7,7 @@
  * @see REQ-RV-001 through REQ-RV-006
  */
 
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { useResponseStore } from '../stores/response-store';
 import { useRequestStore } from '../stores/request-store';
 import { useMessage } from '../hooks/useMessage';
@@ -70,11 +70,61 @@ function highlightJson(json: string): string {
     );
 }
 
-interface BodyDisplayProps {
-  response: HttpResponseDef;
+/**
+ * Apply search highlight to an HTML string produced by `highlightJson`.
+ * Wraps text-node matches with `<mark class="rv-search-mark">`.
+ * Operates on the raw HTML — only highlights within text outside `<...>` tags.
+ */
+function applySearchHighlightHtml(html: string, term: string): string {
+  if (!term) return html;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(${escaped})(?=[^<]*(?:<|$))`, 'gi');
+  return html.replace(re, '<mark class="rv-search-mark">$1</mark>');
 }
 
-const BodyDisplay = memo(function BodyDisplay({ response }: BodyDisplayProps): React.ReactElement {
+/**
+ * Count total occurrences of `term` in `text` (case-insensitive).
+ */
+function countMatches(text: string, term: string): number {
+  if (!term) return 0;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return (text.match(new RegExp(escaped, 'gi')) ?? []).length;
+}
+
+/**
+ * Split plain text into segments, wrapping matches in a `<mark>` element.
+ */
+function PlainTextWithHighlight({
+  text,
+  term,
+}: {
+  text: string;
+  term: string;
+}): React.ReactElement {
+  if (!term) return <>{text}</>;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === term.toLowerCase() ? (
+          <mark key={i} className="rv-search-mark">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+interface BodyDisplayProps {
+  response: HttpResponseDef;
+  searchTerm: string;
+}
+
+const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisplayProps): React.ReactElement {
   const { body, bodySize, headers, truncated, bodyRef } = response;
   const contentType = headers['content-type'] ?? headers['Content-Type'] ?? '';
 
@@ -189,7 +239,7 @@ const BodyDisplay = memo(function BodyDisplay({ response }: BodyDisplayProps): R
         <pre
           className="rv-body-pre rv-json"
           // eslint-disable-next-line react/no-danger -- intentional syntax highlight
-          dangerouslySetInnerHTML={{ __html: highlightJson(prettyJson) }}
+          dangerouslySetInnerHTML={{ __html: applySearchHighlightHtml(highlightJson(prettyJson), searchTerm) }}
           aria-label="Response body (JSON)"
         />
       ) : (
@@ -197,7 +247,7 @@ const BodyDisplay = memo(function BodyDisplay({ response }: BodyDisplayProps): R
           className={`rv-body-pre${isHtml || isXml ? ' rv-body-pre--markup' : ''}`}
           aria-label="Response body"
         >
-          {displayBody}
+          <PlainTextWithHighlight text={displayBody} term={searchTerm} />
         </pre>
       )}
     </div>
@@ -322,7 +372,39 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
   const activeTab = useResponseStore((s) => s.activeTab);
   const setActiveTab = useResponseStore((s) => s.setActiveTab);
 
+  // Search state (F-03)
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const headerCount = response ? Object.keys(response.headers).length : 0;
+
+  const matchCount = useMemo(() => {
+    if (!searchTerm || !response) return 0;
+    return countMatches(response.body, searchTerm);
+  }, [searchTerm, response]);
+
+  // Ctrl+F inside the body panel opens the search bar
+  const handleBodyKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      setSearchVisible(true);
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+    if (e.key === 'Escape') {
+      setSearchTerm('');
+      setSearchVisible(false);
+    }
+  }, []);
+
+  // Clear search when switching tabs
+  const handleTabSwitch = useCallback((tab: 'body' | 'headers' | 'timing') => {
+    setActiveTab(tab);
+    if (tab !== 'body') {
+      setSearchTerm('');
+      setSearchVisible(false);
+    }
+  }, [setActiveTab]);
 
   // ---- States ----
   if (status === 'idle') {
@@ -384,7 +466,7 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
           role="tab"
           type="button"
           className={`rv-tab${activeTab === 'body' ? ' rv-tab--active' : ''}`}
-          onClick={() => setActiveTab('body')}
+          onClick={() => handleTabSwitch('body')}
           aria-selected={activeTab === 'body'}
           aria-controls="rv-panel-body"
         >
@@ -394,7 +476,7 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
           role="tab"
           type="button"
           className={`rv-tab${activeTab === 'headers' ? ' rv-tab--active' : ''}`}
-          onClick={() => setActiveTab('headers')}
+          onClick={() => handleTabSwitch('headers')}
           aria-selected={activeTab === 'headers'}
           aria-controls="rv-panel-headers"
         >
@@ -405,7 +487,7 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
           role="tab"
           type="button"
           className={`rv-tab${activeTab === 'timing' ? ' rv-tab--active' : ''}`}
-          onClick={() => setActiveTab('timing')}
+          onClick={() => handleTabSwitch('timing')}
           aria-selected={activeTab === 'timing'}
           aria-controls="rv-panel-timing"
         >
@@ -421,8 +503,50 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
           aria-label="Response body"
           hidden={activeTab !== 'body'}
           className="rv-panel"
+          onKeyDown={activeTab === 'body' ? handleBodyKeyDown : undefined}
         >
-          <BodyDisplay response={response} />
+          {/* Search bar (F-03) — visible when Ctrl+F or when searchVisible */}
+          {(searchVisible || searchTerm) && (
+            <div className="rv-search" role="search" aria-label="Search in response body">
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="rv-search__input"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setSearchTerm('');
+                    setSearchVisible(false);
+                  }
+                }}
+                placeholder="Search in response…"
+                aria-label="Search response body"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {searchTerm && (
+                <span className="rv-search__count" aria-live="polite">
+                  {matchCount === 0 ? 'No matches' : `${matchCount} match${matchCount !== 1 ? 'es' : ''}`}
+                </span>
+              )}
+              <button
+                type="button"
+                className="rv-action-btn"
+                onClick={() => { setSearchTerm(''); setSearchVisible(false); }}
+                aria-label="Close search"
+                title="Close (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          {!searchVisible && !searchTerm && (
+            <div className="rv-search-hint" aria-hidden="true">
+              {/* Ctrl+F hint is implicit — no persistent UI clutter */}
+            </div>
+          )}
+          <BodyDisplay response={response} searchTerm={searchTerm} />
         </div>
 
         <div

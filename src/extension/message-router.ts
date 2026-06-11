@@ -483,7 +483,7 @@ export class MessageRouter implements vscode.Disposable {
 
   /** Persist a request definition via CollectionService (Phase 4). */
   private async handleSaveRequest(
-    _correlationId: CorrelationId,
+    correlationId: CorrelationId,
     payload: { path: string; request: import('../shared/models').HttpRequestDef },
   ): Promise<void> {
     if (!this.services.collection) {
@@ -514,7 +514,7 @@ export class MessageRouter implements vscode.Disposable {
       // Confirm save to webview with the resolved path
       this.sendToWebview({
         type: 'response:request-saved',
-        correlationId: `saved-${Date.now()}`,
+        correlationId,
         payload: { path: savePath },
       });
     } catch (err: unknown) {
@@ -1081,13 +1081,10 @@ export class MessageRouter implements vscode.Disposable {
    */
   private async handleSaveToFile(suggestedName: string, content: string): Promise<void> {
     try {
-      // H-07: bodyRef case — content may be a file:// URI or absolute path
+      // H-07: bodyRef case — content may be a file:// URI (large body offloaded to temp)
       let actualContent = content;
-      const fsPath = content.startsWith('file:///')
-        ? content.replace(/^file:\/\/\//i, '').replace(/\//g, path.sep)
-        : content;
-      if (content.startsWith('file:///') || (path.isAbsolute(fsPath) && fs.existsSync(fsPath))) {
-        actualContent = fs.readFileSync(fsPath, 'utf8');
+      if (content.startsWith('file:///')) {
+        actualContent = fs.readFileSync(vscode.Uri.parse(content).fsPath, 'utf8');
       }
 
       const uri = await vscode.window.showSaveDialog({

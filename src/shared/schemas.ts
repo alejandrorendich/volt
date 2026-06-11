@@ -52,9 +52,10 @@ const requestYamlSchema = {
       properties: {
         type: {
           type: 'string',
-          enum: ['json', 'text', 'form-data', 'none'],
+          enum: ['json', 'text', 'form-data', 'none', 'binary'],
         },
         content: { type: 'string' },
+        filePath: { type: 'string' },
       },
       if: { properties: { type: { enum: ['json', 'text', 'form-data'] } } },
       then: { required: ['content'] },

@@ -61,7 +61,12 @@ function useMessageRouter(): void {
             message: msg.payload.message,
             ...(msg.payload.code !== undefined ? { code: msg.payload.code } : {}),
           });
-          requestStore.setLoading(false, null);
+          // Only clear the loading state if this error corresponds to the
+          // active in-flight request — other error messages (e.g. env/collection
+          // errors) share the same message type but should not stop the spinner.
+          if (msg.correlationId === requestStore.activeCorrelationId) {
+            requestStore.setLoading(false, null);
+          }
           break;
 
         case 'response:collection':
@@ -99,6 +104,7 @@ function useMessageRouter(): void {
               queryParams: loadedParams,
               preScript: msg.payload.preScript ?? '',
               postScript: msg.payload.postScript ?? '',
+              sslVerify: msg.payload.settings?.sslVerify !== false,
             });
             // Reset response panel for fresh context
             responseStore.reset();

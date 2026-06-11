@@ -531,9 +531,15 @@ export async function importPostmanCollection(
         output.appendLine('[PostmanImport] "postman" environment already exists — merging variables');
       }
       try {
+        // Save the previously active environment so we can restore it afterward
+        const prevActive = environmentService.getActiveName();
         // Switch to "postman" temporarily so updateVariables targets it
         await environmentService.setActive('postman');
         await environmentService.updateVariables(variables);
+        // Restore the previous active environment
+        if (prevActive) {
+          await environmentService.setActive(prevActive);
+        }
         output.appendLine(`[PostmanImport] Saved ${variableCount} variable(s) to postman environment`);
       } catch (err: unknown) {
         output.appendLine(

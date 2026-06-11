@@ -169,7 +169,6 @@ const AddVarRow = memo(function AddVarRow({ onAdd }: AddVarRowProps): React.Reac
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          onBlur={trySubmit}
           aria-label="New variable value"
         />
       </td>

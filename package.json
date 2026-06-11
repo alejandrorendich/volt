@@ -2,7 +2,7 @@
   "name": "volt",
   "displayName": "Volt",
   "description": "Fast, free HTTP client for VS Code",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "publisher": "volt-dev",
   "license": "MIT",
   "private": true,
@@ -32,7 +32,9 @@
     "onCommand:volt.exportFolder",
     "onCommand:volt.duplicateRequest",
     "onCommand:volt.duplicateFolder",
-    "onCommand:volt.importPostman"
+    "onCommand:volt.importPostman",
+    "onCommand:volt.renameRequest",
+    "onCommand:volt.copyAsCurl"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -140,6 +142,18 @@
         "title": "Import from Postman",
         "category": "Volt",
         "icon": "$(import)"
+      },
+      {
+        "command": "volt.renameRequest",
+        "title": "Rename Request",
+        "category": "Volt",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "volt.copyAsCurl",
+        "title": "Copy as cURL",
+        "category": "Volt",
+        "icon": "$(terminal)"
       }
     ],
     "keybindings": [
@@ -217,19 +231,19 @@
           "group": "inline@2"
         },
         {
-          "command": "volt.duplicateRequest",
-          "when": "view == volt.collectionTree && viewItem == voltRequest",
-          "group": "edit@1"
-        },
-        {
           "command": "volt.exportRequest",
           "when": "view == volt.collectionTree && viewItem == voltRequest",
           "group": "export@1"
         },
         {
-          "command": "volt.deleteRequest",
+          "command": "volt.copyAsCurl",
           "when": "view == volt.collectionTree && viewItem == voltRequest",
-          "group": "modify"
+          "group": "export@2"
+        },
+        {
+          "command": "volt.renameRequest",
+          "when": "view == volt.collectionTree && viewItem == voltRequest",
+          "group": "edit@1"
         },
         {
           "command": "volt.duplicateFolder",
@@ -240,11 +254,6 @@
           "command": "volt.exportFolder",
           "when": "view == volt.collectionTree && viewItem == voltFolder",
           "group": "export@1"
-        },
-        {
-          "command": "volt.deleteFolder",
-          "when": "view == volt.collectionTree && viewItem == voltFolder",
-          "group": "modify"
         },
         {
           "command": "volt.import",

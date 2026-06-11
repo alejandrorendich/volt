@@ -3,7 +3,7 @@
  *
  * Executes HTTP requests via undici with:
  * - All HTTP methods: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
- * - Per-phase timing via `diagnostics_channel` (DNS / TCP / TLS / TTFB / body)
+ * - Wall-clock timing (`total`); per-phase breakdown not available without global mutex
  * - AbortController-based cancellation
  * - Configurable redirect following (max 10)
  * - Configurable timeout (default 30 s)
@@ -21,7 +21,6 @@
  */
 
 import { request as undiciRequest, Agent } from 'undici';
-import * as diagnosticsChannel from 'diagnostics_channel';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -70,22 +69,6 @@ export type HttpExecuteResult =
   | HttpExecuteError;
 
 // ---------------------------------------------------------------------------
-// Internal timing accumulator
-// ---------------------------------------------------------------------------
-
-interface TimingAccumulator {
-  dnsStart: number | undefined;
-  dnsEnd: number | undefined;
-  connectStart: number | undefined;
-  connectEnd: number | undefined;
-  tlsStart: number | undefined;
-  tlsEnd: number | undefined;
-  sendStart: number | undefined;
-  responseStart: number | undefined;
-  responseEnd: number | undefined;
-}
-
-// ---------------------------------------------------------------------------
 // HttpService
 // ---------------------------------------------------------------------------
 
@@ -99,12 +82,6 @@ export class HttpService implements IHttpService, vscode.Disposable {
   private readonly output: vscode.OutputChannel;
   /** Map of correlationId → AbortController for in-flight requests. */
   private readonly inFlight = new Map<string, AbortController>();
-  /**
-   * Simple async mutex — serialises HTTP execution so that the global
-   * `undici:*` diagnostics channels never receive events from two concurrent
-   * requests at the same time (C-04).
-   */
-  private executionQueue: Promise<void> = Promise.resolve();
 
   constructor(output: vscode.OutputChannel) {
     this.output = output;
@@ -120,24 +97,13 @@ export class HttpService implements IHttpService, vscode.Disposable {
     onProgress?: (phase: import('../../shared/models').TimingPhase, elapsed: number) => void,
     options: HttpRequestOptions = {},
   ): Promise<HttpResponseDef> {
-    // Serialise execution through the queue so concurrent requests never
-    // cross-contaminate the global undici diagnostics channels (C-04).
-    return new Promise<HttpResponseDef>((resolve, reject) => {
-      this.executionQueue = this.executionQueue.then(async () => {
-        try {
-          const result = await this.executeWithResult(requestDef, correlationId, onProgress, options);
-          if (result.type === 'error') {
-            const err = new Error(result.message);
-            (err as NodeJS.ErrnoException).code = result.code;
-            reject(err);
-          } else {
-            resolve(result.response);
-          }
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+    const result = await this.executeWithResult(requestDef, correlationId, onProgress, options);
+    if (result.type === 'error') {
+      const err = new Error(result.message);
+      (err as NodeJS.ErrnoException).code = result.code;
+      throw err;
+    }
+    return result.response;
   }
 
   /** Lower-level variant — returns a discriminated result instead of throwing. */
@@ -152,8 +118,12 @@ export class HttpService implements IHttpService, vscode.Disposable {
       followRedirects = true,
       maxRedirects = DEFAULT_MAX_REDIRECTS,
       bodySizeLimit = DEFAULT_BODY_SIZE_LIMIT,
-      rejectUnauthorized = false,
+      rejectUnauthorized = true,
     } = options;
+
+    // Per-request SSL override: if settings.sslVerify is explicitly false, disable verification
+    const effectiveRejectUnauthorized =
+      requestDef.settings?.sslVerify === false ? false : rejectUnauthorized;
 
     // Build final URL with enabled query params
     const url = buildUrl(requestDef);
@@ -163,20 +133,6 @@ export class HttpService implements IHttpService, vscode.Disposable {
     this.inFlight.set(correlationId, controller);
 
     const wallStart = performance.now();
-    const timingAcc: TimingAccumulator = {
-      dnsStart: undefined,
-      dnsEnd: undefined,
-      connectStart: undefined,
-      connectEnd: undefined,
-      tlsStart: undefined,
-      tlsEnd: undefined,
-      sendStart: undefined,
-      responseStart: undefined,
-      responseEnd: undefined,
-    };
-
-    // Subscribe to diagnostics_channel events before firing the request
-    const unsub = subscribeToTimingChannels(timingAcc);
 
     try {
       this.output.appendLine(`[HttpService] ${requestDef.method} ${url} (correlationId: ${correlationId})`);
@@ -184,7 +140,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
       // Build undici agent (controls TLS and per-agent options)
       const agent = new Agent({
         connect: {
-          rejectUnauthorized,
+          rejectUnauthorized: effectiveRejectUnauthorized,
         },
         maxRedirections: followRedirects ? maxRedirects : 0,
       });
@@ -198,7 +154,6 @@ export class HttpService implements IHttpService, vscode.Disposable {
         headers['content-type'] = contentType;
       }
 
-      timingAcc.sendStart = performance.now();
       onProgress?.('dns', 0);
 
       const resp = await undiciRequest(url, {
@@ -213,7 +168,6 @@ export class HttpService implements IHttpService, vscode.Disposable {
         throwOnError: false,
       } as Parameters<typeof undiciRequest>[1]);
 
-      timingAcc.responseStart = performance.now();
       onProgress?.('ttfb', performance.now() - wallStart);
 
       // Collect response body with size limit
@@ -222,11 +176,20 @@ export class HttpService implements IHttpService, vscode.Disposable {
         bodySizeLimit,
       );
 
-      timingAcc.responseEnd = performance.now();
       onProgress?.('body', performance.now() - wallStart);
       const wallEnd = performance.now();
 
-      const timing = buildTimingBreakdown(timingAcc, wallStart, wallEnd);
+      // Use wall-clock total; per-phase breakdown from diagnostics_channel is
+      // not available without the global mutex (removed to allow concurrent
+      // requests). dns/tcp/tls/ttfb/body are zeroed — total is accurate.
+      const timing: TimingBreakdown = {
+        dns: 0,
+        tcp: 0,
+        tls: 0,
+        ttfb: 0,
+        body: 0,
+        total: wallEnd - wallStart,
+      };
 
       // Normalise headers (undici may return arrays for multi-value headers)
       const responseHeaders = normaliseHeaders(resp.headers as Record<string, string | string[]>);
@@ -265,12 +228,11 @@ export class HttpService implements IHttpService, vscode.Disposable {
       return { type: 'success', response };
     } catch (err: unknown) {
       const wallEnd = performance.now();
-      const timing = buildTimingBreakdown(timingAcc, wallStart, wallEnd);
+      const timing: TimingBreakdown = { dns: 0, tcp: 0, tls: 0, ttfb: 0, body: 0, total: wallEnd - wallStart };
       const mapped = mapError(err, timing);
       this.output.appendLine(`[HttpService] Error — ${mapped.code}: ${mapped.message}`);
       return mapped;
     } finally {
-      unsub();
       this.inFlight.delete(correlationId);
     }
   }
@@ -300,90 +262,6 @@ export class HttpService implements IHttpService, vscode.Disposable {
     }
     this.inFlight.clear();
   }
-}
-
-// ---------------------------------------------------------------------------
-// diagnostics_channel binding
-// ---------------------------------------------------------------------------
-
-/**
- * Subscribe to undici's internal diagnostics channels to capture per-phase
- * timing. Returns an unsubscribe function to call when the request completes.
- *
- * Channel reference:
- * https://undici.nodejs.org/#/docs/api/DiagnosticsChannel
- *
- * We use the `undici:request:*` channels which fire for each connection
- * attempt. The accumulator is mutated in-place so the outer scope can read
- * the final timestamps after the response is consumed.
- */
-function subscribeToTimingChannels(acc: TimingAccumulator): () => void {
-  // undici diagnostics channels (Node 18+)
-  // Names follow undici's public channel API.
-  const handlers: Array<{ channel: ReturnType<typeof diagnosticsChannel.channel>; fn: (msg: unknown) => void }> = [];
-
-  function sub(name: string, fn: (msg: unknown) => void): void {
-    const ch = diagnosticsChannel.channel(name);
-    ch.subscribe(fn);
-    handlers.push({ channel: ch, fn });
-  }
-
-  sub('undici:client:connectError', (_msg) => {
-    // Connection error — mark the connect phase end so we know it failed
-    if (acc.connectStart !== undefined && acc.connectEnd === undefined) {
-      acc.connectEnd = performance.now();
-    }
-  });
-
-  sub('undici:client:connected', (_msg) => {
-    if (acc.connectEnd === undefined) {
-      acc.connectEnd = performance.now();
-    }
-  });
-
-  sub('undici:request:create', (_msg) => {
-    if (acc.dnsStart === undefined) {
-      acc.dnsStart = performance.now();
-    }
-  });
-
-  sub('undici:client:beforeConnect', (_msg) => {
-    if (acc.connectStart === undefined) {
-      acc.connectStart = performance.now();
-    }
-  });
-
-  sub('undici:client:sendHeaders', (_msg) => {
-    if (acc.dnsEnd === undefined && acc.dnsStart !== undefined) {
-      // DNS resolves before the TCP connection is established; we use
-      // beforeConnect as the DNS-end proxy since undici doesn't expose a
-      // separate DNS channel.
-      acc.dnsEnd = acc.connectStart ?? performance.now();
-    }
-    if (acc.tlsStart === undefined && acc.connectEnd !== undefined) {
-      acc.tlsStart = acc.connectEnd;
-    }
-    if (acc.tlsEnd === undefined) {
-      acc.tlsEnd = performance.now();
-    }
-  });
-
-  sub('undici:request:headers', (_msg) => {
-    // First response bytes arrived
-    if (acc.responseStart === undefined) {
-      acc.responseStart = performance.now();
-    }
-  });
-
-  return () => {
-    for (const { channel, fn } of handlers) {
-      try {
-        channel.unsubscribe(fn);
-      } catch {
-        // Ignore unsubscribe errors — channel may already be gone
-      }
-    }
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -511,50 +389,6 @@ function isUtf8Safe(buf: Buffer): boolean {
   } catch {
     return false;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Timing builder
-// ---------------------------------------------------------------------------
-
-function buildTimingBreakdown(
-  acc: TimingAccumulator,
-  wallStart: number,
-  wallEnd: number,
-): TimingBreakdown {
-  const total = wallEnd - wallStart;
-
-  // DNS: from request create to TCP connect start
-  const dns =
-    acc.dnsStart !== undefined && acc.dnsEnd !== undefined
-      ? Math.max(0, acc.dnsEnd - acc.dnsStart)
-      : 0;
-
-  // TCP: from connect start to connect end
-  const tcp =
-    acc.connectStart !== undefined && acc.connectEnd !== undefined
-      ? Math.max(0, acc.connectEnd - acc.connectStart)
-      : 0;
-
-  // TLS: from connect end to headers-sent (only for HTTPS)
-  const tls =
-    acc.tlsStart !== undefined && acc.tlsEnd !== undefined
-      ? Math.max(0, acc.tlsEnd - acc.tlsStart)
-      : 0;
-
-  // TTFB: from send to first response bytes
-  const ttfb =
-    acc.sendStart !== undefined && acc.responseStart !== undefined
-      ? Math.max(0, acc.responseStart - acc.sendStart)
-      : 0;
-
-  // Body download: from first byte to body fully consumed
-  const body =
-    acc.responseStart !== undefined && acc.responseEnd !== undefined
-      ? Math.max(0, acc.responseEnd - acc.responseStart)
-      : 0;
-
-  return { dns, tcp, tls, ttfb, body, total };
 }
 
 // ---------------------------------------------------------------------------

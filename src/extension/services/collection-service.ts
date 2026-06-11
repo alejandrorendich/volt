@@ -65,6 +65,7 @@ interface RawRequestYaml {
   description?: unknown;
   preScript?: unknown;
   postScript?: unknown;
+  settings?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +244,32 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
     // Remove from order manifest
     await this.removeFromOrder(normalized);
     this.output.appendLine(`[CollectionService] Deleted request: ${normalized}`);
+  }
+
+  /**
+   * Rename a request YAML file from `oldPath` to `newPath`.
+   * Both paths are relative to `.volt/requests/`, without extension.
+   * Updates the order manifest if the old path was referenced there.
+   */
+  async renameRequest(oldPath: string, newPath: string): Promise<void> {
+    const oldNorm = normalizeRelPath(oldPath);
+    const newNorm = normalizeRelPath(newPath);
+    const oldAbs = path.join(this.workspaceRoot, REQUESTS_DIR, oldNorm + '.yaml');
+    const newAbs = path.join(this.workspaceRoot, REQUESTS_DIR, newNorm + '.yaml');
+
+    if (!fs.existsSync(oldAbs)) {
+      throw new Error(`Request file not found: ${oldAbs}`);
+    }
+    if (fs.existsSync(newAbs)) {
+      throw new Error(`A request named "${newNorm}" already exists.`);
+    }
+
+    await this.ensureDir(path.dirname(newAbs));
+    fs.renameSync(oldAbs, newAbs);
+
+    // Update order manifest to reflect the new path
+    await this.updateOrderPath(oldNorm, newNorm);
+    this.output.appendLine(`[CollectionService] Renamed request: ${oldNorm} → ${newNorm}`);
   }
 
   /**
@@ -509,6 +536,27 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
     }
   }
 
+  private async updateOrderPath(oldRelPath: string, newRelPath: string): Promise<void> {
+    const manifestPath = path.join(this.workspaceRoot, COLLECTION_YAML);
+    if (!fs.existsSync(manifestPath)) return;
+
+    try {
+      const raw = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as RawCollectionYaml;
+      if (!raw || !Array.isArray(raw.order)) return;
+
+      const updated = (raw.order as CollectionOrderEntry[]).map((e) =>
+        'request' in e && e.request === oldRelPath ? { request: newRelPath } : e,
+      );
+
+      await this.atomicWrite(
+        manifestPath,
+        yaml.dump({ ...raw, order: updated }, { lineWidth: 120 }),
+      );
+    } catch {
+      // Non-critical
+    }
+  }
+
   private async ensureSecretsIgnored(): Promise<void> {
     const gitignorePath = path.join(this.workspaceRoot, '.gitignore');
 
@@ -648,6 +696,10 @@ function buildRequestYaml(req: HttpRequestDef): string {
     out['postScript'] = req.postScript;
   }
 
+  if (req.settings !== undefined) {
+    out['settings'] = req.settings;
+  }
+
   return yaml.dump(out, { lineWidth: 120, noCompatMode: true });
 }
 
@@ -706,11 +758,20 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
   const preScript = typeof raw.preScript === 'string' ? raw.preScript : undefined;
   const postScript = typeof raw.postScript === 'string' ? raw.postScript : undefined;
 
+  let settings: HttpRequestDef['settings'];
+  if (raw.settings && typeof raw.settings === 'object') {
+    const s = raw.settings as Record<string, unknown>;
+    if (typeof s['sslVerify'] === 'boolean') {
+      settings = { sslVerify: s['sslVerify'] };
+    }
+  }
+
   return {
     id, name, method, url, headers, queryParams,
     ...(body !== undefined ? { body } : {}),
     ...(preScript ? { preScript } : {}),
     ...(postScript ? { postScript } : {}),
+    ...(settings !== undefined ? { settings } : {}),
   };
 }
 

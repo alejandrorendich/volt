@@ -64,6 +64,7 @@ export interface TabSnapshot {
   preScript: string;
   postScript: string;
   activeTab: 'params' | 'headers' | 'body' | 'scripts';
+  sslVerify: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,8 @@ export interface RequestState {
   postScript: string;
   /** Active sub-tab in the builder panels. */
   activeTab: 'params' | 'headers' | 'body' | 'scripts';
+  /** Whether TLS certificate verification is enabled. Default: true */
+  sslVerify: boolean;
   /** Whether a request is currently in-flight. */
   loading: boolean;
   /** CorrelationId of the active in-flight request (for cancel). */
@@ -152,6 +155,9 @@ export interface RequestActions {
 
   /** Build the final HttpRequestDef for sending. */
   toRequestDef: () => import('../../shared/models').HttpRequestDef;
+
+  // SSL verification toggle (F-05)
+  setSslVerify: (sslVerify: boolean) => void;
 
   // Tab management (REQ-RB-007)
   addTab: () => void;
@@ -255,6 +261,7 @@ function captureSnapshot(s: RequestState): TabSnapshot {
     preScript: s.preScript,
     postScript: s.postScript,
     activeTab: s.activeTab,
+    sslVerify: s.sslVerify,
   };
 }
 
@@ -274,6 +281,7 @@ function applySnapshot(snapshot: TabSnapshot): Partial<RequestState> {
     preScript: snapshot.preScript,
     postScript: snapshot.postScript,
     activeTab: snapshot.activeTab,
+    sslVerify: snapshot.sslVerify,
   };
 }
 
@@ -303,6 +311,7 @@ const INITIAL_SNAPSHOT: TabSnapshot = {
   preScript: '',
   postScript: '',
   activeTab: 'params',
+  sslVerify: true,
 };
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
@@ -477,7 +486,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
     return {
       id: s.id,
-      name: s.name || undefined,
+      name: s.name || '',
       method: s.method,
       url: s.url,
       headers: filteredHeaders,
@@ -485,6 +494,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       queryParams: s.queryParams.filter((p) => p.key.trim() !== ''),
       ...(s.preScript ? { preScript: s.preScript } : {}),
       ...(s.postScript ? { postScript: s.postScript } : {}),
+      ...(!s.sslVerify ? { settings: { sslVerify: false } } : {}),
     };
   },
 
@@ -510,6 +520,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       preScript: '',
       postScript: '',
       activeTab: 'params',
+      sslVerify: true,
     };
     set((s) => {
       // Save current tab's state before switching
@@ -598,6 +609,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         preScript: '',
         postScript: '',
         activeTab: 'params',
+        sslVerify: true,
       };
       updatedSnapshots.set(tabId, freshSnapshot);
       set({
@@ -623,6 +635,11 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   setStreamingPhase: (phase) => set({ streamingPhase: phase }),
 
   setScriptError: (error) => set({ scriptError: error }),
+
+  setSslVerify: (sslVerify) => {
+    set({ sslVerify });
+    get().markDirty();
+  },
 
   getSavePath: () => get().savePath,
   setSavePath: (path) => set({ savePath: path }),

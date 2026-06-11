@@ -17,7 +17,6 @@ export const TabBar = memo(function TabBar(): React.ReactElement {
   const activeTabId = useRequestStore((s) => s.activeTabId);
   const switchTab = useRequestStore((s) => s.switchTab);
   const closeTab = useRequestStore((s) => s.closeTab);
-  const addTab = useRequestStore((s) => s.addTab);
 
   const handleClose = useCallback(
     (e: React.MouseEvent, tabId: string) => {

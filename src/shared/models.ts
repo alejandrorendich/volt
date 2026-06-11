@@ -69,6 +69,11 @@ export interface HttpRequestDef {
   readonly preScript?: string;
   /** JavaScript code executed AFTER the response is received. */
   readonly postScript?: string;
+  /** Per-request settings that override global defaults. */
+  readonly settings?: {
+    /** When false, TLS certificate verification is disabled for this request. Default: true */
+    readonly sslVerify?: boolean;
+  };
 }
 
 /**
