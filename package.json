@@ -22,8 +22,9 @@
     "onCommand:volt.import",
     "onCommand:volt.exportRequest",
     "onCommand:volt.exportFolder",
-    "onCommand:volt.duplicateRequest",
-    "onCommand:volt.duplicateFolder"
+      "onCommand:volt.duplicateRequest",
+      "onCommand:volt.duplicateFolder",
+      "onCommand:volt.importPostman"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -87,12 +88,14 @@
       {
         "command": "volt.deleteRequest",
         "title": "Delete Request",
-        "category": "Volt"
+        "category": "Volt",
+        "icon": "$(trash)"
       },
       {
         "command": "volt.deleteFolder",
         "title": "Delete Folder",
-        "category": "Volt"
+        "category": "Volt",
+        "icon": "$(trash)"
       },
       {
         "command": "volt.exportRequest",
@@ -123,6 +126,12 @@
         "title": "Duplicate Folder",
         "category": "Volt",
         "icon": "$(copy)"
+      },
+      {
+        "command": "volt.importPostman",
+        "title": "Import from Postman",
+        "category": "Volt",
+        "icon": "$(import)"
       }
     ],
     "keybindings": [
@@ -166,13 +175,38 @@
           "command": "volt.import",
           "when": "view == volt.collectionTree",
           "group": "navigation"
+        },
+        {
+          "command": "volt.importPostman",
+          "when": "view == volt.collectionTree",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "volt.newRequestInFolder",
           "when": "view == volt.collectionTree && viewItem == voltFolder",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "volt.duplicateFolder",
+          "when": "view == volt.collectionTree && viewItem == voltFolder",
+          "group": "inline@2"
+        },
+        {
+          "command": "volt.deleteFolder",
+          "when": "view == volt.collectionTree && viewItem == voltFolder",
+          "group": "inline@3"
+        },
+        {
+          "command": "volt.duplicateRequest",
+          "when": "view == volt.collectionTree && viewItem == voltRequest",
+          "group": "inline@1"
+        },
+        {
+          "command": "volt.deleteRequest",
+          "when": "view == volt.collectionTree && viewItem == voltRequest",
+          "group": "inline@2"
         },
         {
           "command": "volt.duplicateRequest",
@@ -208,6 +242,11 @@
           "command": "volt.import",
           "when": "view == volt.collectionTree",
           "group": "import@1"
+        },
+        {
+          "command": "volt.importPostman",
+          "when": "view == volt.collectionTree",
+          "group": "import@2"
         }
       ]
     },

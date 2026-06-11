@@ -10,12 +10,15 @@
  * @see REQ-RB-001 through REQ-RB-006
  */
 
-import React, { useCallback, useId, useRef, memo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, memo, useState } from 'react';
 import { useRequestStore } from '../stores/request-store';
+import type { RequestState } from '../stores/request-store';
 import { useResponseStore } from '../stores/response-store';
+import { useHistoryStore } from '../stores/history-store';
 import { useMessage } from '../hooks/useMessage';
 import { KeyValueEditor } from './KeyValueEditor';
 import type { HttpMethod, RequestBody } from '../../shared/models';
+import type { HistoryEntry } from '../../shared/protocol';
 import './RequestBuilder.css';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +50,148 @@ const BODY_TYPE_LABELS: Record<RequestBody['type'], string> = {
   'form-data': 'Form Data',
   binary: 'Binary',
 };
+
+// ---------------------------------------------------------------------------
+// HistoryPanel — execution history for saved requests
+// ---------------------------------------------------------------------------
+
+/**
+ * Format an ISO timestamp as a human-readable relative time string.
+ * E.g. "2 min ago", "just now", "3 hr ago".
+ */
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function statusClass(status: number): string {
+  if (status >= 200 && status < 300) return 'rb-history__status--success';
+  if (status >= 300 && status < 400) return 'rb-history__status--redirect';
+  return 'rb-history__status--error';
+}
+
+interface HistoryPanelProps {
+  requestPath: string;
+}
+
+const HistoryPanel = memo(function HistoryPanel({ requestPath }: HistoryPanelProps): React.ReactElement {
+  const { send } = useMessage();
+  const setHistory = useHistoryStore((s) => s.setHistory);
+  const clearHistoryStore = useHistoryStore((s) => s.clearHistory);
+  const entries = useHistoryStore((s) => s.getHistory(requestPath));
+
+  // Load history from host on mount (and when requestPath changes)
+  useEffect(() => {
+    send({
+      type: 'request:get-history',
+      correlationId: `get-history-${Date.now()}`,
+      payload: { path: requestPath },
+    });
+  }, [requestPath, send]);
+
+  const handleClear = useCallback(() => {
+    send({
+      type: 'request:clear-history',
+      correlationId: `clear-history-${Date.now()}`,
+      payload: { path: requestPath },
+    });
+    clearHistoryStore(requestPath);
+    setHistory(requestPath, []);
+  }, [requestPath, send, clearHistoryStore, setHistory]);
+
+  const handleEntryClick = useCallback((entry: HistoryEntry) => {
+    const responseStore = useResponseStore.getState();
+    responseStore.setResponse({
+      requestId: requestPath,
+      status: entry.status,
+      statusText: entry.statusText,
+      headers: entry.headers ?? {},
+      body: entry.body ?? '',
+      bodySize: entry.body?.length ?? 0,
+      timing: { dns: 0, tcp: 0, tls: 0, ttfb: 0, body: 0, total: entry.time },
+    });
+  }, [requestPath]);
+
+  const handleDeleteEntry = useCallback((timestamp: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger the row click
+    send({
+      type: 'request:delete-history-entry',
+      correlationId: `delete-entry-${Date.now()}`,
+      payload: { path: requestPath, timestamp },
+    });
+    // Optimistic update — remove from local store
+    const current = useHistoryStore.getState().getHistory(requestPath);
+    setHistory(requestPath, current.filter((entry) => entry.timestamp !== timestamp));
+  }, [requestPath, send, setHistory]);
+
+  if (entries.length === 0) {
+    return (
+      <div className="rb-history rb-history--empty">
+        <span className="rb-history__empty-icon" aria-hidden="true">🕐</span>
+        <span className="rb-history__empty-text">No executions yet — send a request to start logging</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rb-history">
+      <div className="rb-history__list" role="list" aria-label="Request execution history">
+        {(entries as HistoryEntry[]).map((entry, i) => (
+          <div
+            key={`${entry.timestamp}-${i}`}
+            className="rb-history__entry"
+            role="listitem"
+            onClick={() => handleEntryClick(entry)}
+            title="Click to view in response panel"
+          >
+            <span className={`rb-history__status ${statusClass(entry.status)}`} aria-label={`Status ${entry.status}`}>
+              {entry.status}
+            </span>
+            <span className="rb-history__method" aria-label={`Method ${entry.method}`}>
+              {entry.method}
+            </span>
+            <span className="rb-history__url" title={entry.url} aria-label="URL">
+              {entry.url.length > 60 ? `…${entry.url.slice(-57)}` : entry.url}
+            </span>
+            <span className="rb-history__time" aria-label={`Response time ${entry.time}ms`}>
+              {entry.time}ms
+            </span>
+            <span className="rb-history__timestamp" title={entry.timestamp} aria-label={`Executed ${relativeTime(entry.timestamp)}`}>
+              {relativeTime(entry.timestamp)}
+            </span>
+            <button
+              type="button"
+              className="rb-history__delete-btn"
+              onClick={(e) => handleDeleteEntry(entry.timestamp, e)}
+              aria-label="Delete this entry"
+              title="Delete"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="rb-history__footer">
+        <button
+          type="button"
+          className="rb-history__clear-btn"
+          onClick={handleClear}
+          aria-label="Clear execution history"
+        >
+          Clear History
+        </button>
+      </div>
+    </div>
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Script editor — pre/post request scripts
@@ -404,6 +549,13 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const url = useRequestStore((s) => s.url);
   const toRequestDef = useRequestStore((s) => s.toRequestDef);
   const streamingPhase = useRequestStore((s) => s.streamingPhase);
+  const savePath = useRequestStore((s) => s.savePath);
+
+  // History tab state — local to avoid touching store snapshot machinery
+  const [activeLocalTab, setActiveLocalTab] = useState<'store' | 'history'>('store');
+
+  const historyEntries = useHistoryStore((s) => s.getHistory(savePath ?? ''));
+  const historyCount = savePath ? historyEntries.length : 0;
 
   // Headers
   const headers = useRequestStore((s) => s.headers);
@@ -493,6 +645,23 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const hasBody = body.type !== 'none';
   const hasScripts = preScript.trim() !== '' || postScript.trim() !== '';
 
+  // When switching away from history tab, restore to store-managed tabs
+  const handleStoreTabClick = useCallback(
+    (tab: RequestState['activeTab']) => {
+      setActiveLocalTab('store');
+      setActiveTab(tab);
+    },
+    [setActiveTab],
+  );
+
+  const handleHistoryTabClick = useCallback(() => {
+    setActiveLocalTab('history');
+  }, []);
+
+  const isHistoryTabActive = activeLocalTab === 'history';
+  const isStoreTabActive = (tab: RequestState['activeTab']): boolean =>
+    activeLocalTab === 'store' && activeTab === tab;
+
   return (
     <div className="rb-root">
       {/* ---- Toolbar row: method + URL + send ---- */}
@@ -553,9 +722,9 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
         <button
           role="tab"
           type="button"
-          className={`rb-tab${activeTab === 'params' ? ' rb-tab--active' : ''}`}
-          onClick={() => setActiveTab('params')}
-          aria-selected={activeTab === 'params'}
+          className={`rb-tab${isStoreTabActive('params') ? ' rb-tab--active' : ''}`}
+          onClick={() => handleStoreTabClick('params')}
+          aria-selected={isStoreTabActive('params')}
           aria-controls="rb-panel-params"
         >
           Params {enabledParamCount > 0 && <span className="rb-badge">{enabledParamCount}</span>}
@@ -563,9 +732,9 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
         <button
           role="tab"
           type="button"
-          className={`rb-tab${activeTab === 'headers' ? ' rb-tab--active' : ''}`}
-          onClick={() => setActiveTab('headers')}
-          aria-selected={activeTab === 'headers'}
+          className={`rb-tab${isStoreTabActive('headers') ? ' rb-tab--active' : ''}`}
+          onClick={() => handleStoreTabClick('headers')}
+          aria-selected={isStoreTabActive('headers')}
           aria-controls="rb-panel-headers"
         >
           Headers {enabledHeaderCount > 0 && <span className="rb-badge">{enabledHeaderCount}</span>}
@@ -573,9 +742,9 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
         <button
           role="tab"
           type="button"
-          className={`rb-tab${activeTab === 'body' ? ' rb-tab--active' : ''}`}
-          onClick={() => setActiveTab('body')}
-          aria-selected={activeTab === 'body'}
+          className={`rb-tab${isStoreTabActive('body') ? ' rb-tab--active' : ''}`}
+          onClick={() => handleStoreTabClick('body')}
+          aria-selected={isStoreTabActive('body')}
           aria-controls="rb-panel-body"
         >
           Body {hasBody && <span className="rb-badge rb-badge--type">{body.type}</span>}
@@ -583,9 +752,9 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
         <button
           role="tab"
           type="button"
-          className={`rb-tab${activeTab === 'scripts' ? ' rb-tab--active' : ''}`}
-          onClick={() => setActiveTab('scripts')}
-          aria-selected={activeTab === 'scripts'}
+          className={`rb-tab${isStoreTabActive('scripts') ? ' rb-tab--active' : ''}`}
+          onClick={() => handleStoreTabClick('scripts')}
+          aria-selected={isStoreTabActive('scripts')}
           aria-controls="rb-panel-scripts"
         >
           Scripts{' '}
@@ -595,6 +764,19 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
             <span className="rb-badge">●</span>
           ) : null}
         </button>
+        {savePath !== null && (
+          <button
+            role="tab"
+            type="button"
+            className={`rb-tab${isHistoryTabActive ? ' rb-tab--active' : ''}`}
+            onClick={handleHistoryTabClick}
+            aria-selected={isHistoryTabActive}
+            aria-controls="rb-panel-history"
+          >
+            History{' '}
+            {historyCount > 0 && <span className="rb-badge">{historyCount}</span>}
+          </button>
+        )}
       </div>
 
       {/* ---- Panel content ---- */}
@@ -603,7 +785,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           id="rb-panel-params"
           role="tabpanel"
           aria-label="Query parameters"
-          hidden={activeTab !== 'params'}
+          hidden={!isStoreTabActive('params')}
           className="rb-panel"
         >
           <KeyValueEditor
@@ -620,7 +802,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           id="rb-panel-headers"
           role="tabpanel"
           aria-label="Request headers"
-          hidden={activeTab !== 'headers'}
+          hidden={!isStoreTabActive('headers')}
           className="rb-panel"
         >
           <KeyValueEditor
@@ -638,7 +820,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           id="rb-panel-body"
           role="tabpanel"
           aria-label="Request body"
-          hidden={activeTab !== 'body'}
+          hidden={!isStoreTabActive('body')}
           className="rb-panel"
         >
           <BodyEditor method={method} />
@@ -648,11 +830,23 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           id="rb-panel-scripts"
           role="tabpanel"
           aria-label="Pre and post request scripts"
-          hidden={activeTab !== 'scripts'}
+          hidden={!isStoreTabActive('scripts')}
           className="rb-panel"
         >
           <ScriptEditor />
         </div>
+
+        {savePath !== null && (
+          <div
+            id="rb-panel-history"
+            role="tabpanel"
+            aria-label="Request execution history"
+            hidden={!isHistoryTabActive}
+            className="rb-panel rb-panel--history"
+          >
+            <HistoryPanel requestPath={savePath} />
+          </div>
+        )}
       </div>
     </div>
   );

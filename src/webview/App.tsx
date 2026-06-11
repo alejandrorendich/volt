@@ -8,17 +8,18 @@
  * Layout adapts to narrow panels: below 600px it stacks vertically.
  */
 
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RequestBuilder } from './components/RequestBuilder';
 import { ResponseViewer } from './components/ResponseViewer';
 import { EnvSwitcher } from './components/EnvSwitcher';
 import { TabBar } from './components/TabBar';
-import { useMessage } from './hooks/useMessage';
+import { useMessage, postMessageToHost } from './hooks/useMessage';
 import { useSaveRequest } from './hooks/useSaveRequest';
 import { useRequestStore } from './stores/request-store';
 import { useResponseStore } from './stores/response-store';
 import { useCollectionStore } from './stores/collection-store';
 import { useEnvStore } from './stores/env-store';
+import { useHistoryStore } from './stores/history-store';
 import type { WebviewMessage } from '../shared/protocol';
 import './styles/app.css';
 
@@ -36,11 +37,23 @@ function useMessageRouter(): void {
       const collectionStore = useCollectionStore.getState();
       const envStore = useEnvStore.getState();
       const requestStore = useRequestStore.getState();
+      const historyStore = useHistoryStore.getState();
 
       switch (msg.type) {
         case 'response:execute-http':
           responseStore.setResponse(msg.payload);
           requestStore.setLoading(false, null);
+          // Refresh history if this is a saved request
+          {
+            const sp = requestStore.savePath;
+            if (sp) {
+              postMessageToHost({
+                type: 'request:get-history',
+                correlationId: `refresh-history-${Date.now()}`,
+                payload: { path: sp },
+              });
+            }
+          }
           break;
 
         case 'response:execute-error':
@@ -113,6 +126,11 @@ function useMessageRouter(): void {
           requestStore.markSaved();
           break;
 
+        case 'response:history':
+          // Host replies with history entries for the requested path
+          historyStore.setHistory(msg.payload.path, msg.payload.entries);
+          break;
+
         default:
           break;
       }
@@ -144,6 +162,33 @@ export function App(): React.ReactElement {
   // Autosave + Ctrl+S
   useSaveRequest();
 
+  // Resizable split panel
+  const splitRef = useRef<HTMLDivElement>(null);
+  const [builderWidth, setBuilderWidth] = useState<number | null>(null);
+  const dragging = useRef(false);
+
+  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragging.current || !splitRef.current) return;
+      const rect = splitRef.current.getBoundingClientRect();
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.min(Math.max(pct, 20), 80);
+      setBuilderWidth(clamped);
+    };
+
+    const onMouseUp = () => {
+      dragging.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, []);
+
   return (
     <div className="volt-app">
       {/* Header: environment switcher */}
@@ -151,13 +196,18 @@ export function App(): React.ReactElement {
         <span className="volt-header__brand" aria-label="Volt HTTP Client">⚡ Volt</span>
         <EnvSwitcher />
       </div>
-      <div className="volt-split">
-        <div className="volt-panel volt-panel--builder">
+      <div className="volt-split" ref={splitRef}>
+        <div className="volt-panel volt-panel--builder" style={builderWidth !== null ? { flex: `0 0 ${builderWidth}%` } : undefined}>
           <TabBar />
           <RequestBuilder />
         </div>
-        <div className="volt-split__divider" role="separator" aria-orientation="vertical" />
-        <div className="volt-panel volt-panel--response">
+        <div
+          className="volt-split__divider"
+          role="separator"
+          aria-orientation="vertical"
+          onMouseDown={handleDividerMouseDown}
+        />
+        <div className="volt-panel volt-panel--response" style={builderWidth !== null ? { flex: `0 0 ${100 - builderWidth}%` } : undefined}>
           <ResponseViewer />
         </div>
       </div>

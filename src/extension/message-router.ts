@@ -25,6 +25,7 @@ import type {
   HostMessage,
   WebviewMessage,
   CorrelationId,
+  HistoryEntry,
 } from '../shared/protocol';
 
 // ---------------------------------------------------------------------------
@@ -80,6 +81,16 @@ export interface IEnvironmentService {
   ): import('../shared/models').HttpRequestDef;
 }
 
+/**
+ * Minimal service interface for per-request execution history.
+ */
+export interface IHistoryService {
+  addEntry(requestPath: string, entry: HistoryEntry): void;
+  getHistory(requestPath: string): HistoryEntry[];
+  clearHistory(requestPath: string): void;
+  deleteEntry(requestPath: string, timestamp: string): void;
+}
+
 // ---------------------------------------------------------------------------
 // MessageRouter
 // ---------------------------------------------------------------------------
@@ -93,6 +104,7 @@ export interface RouterServices {
   readonly http?: IHttpService;
   readonly collection?: ICollectionService;
   readonly environment?: IEnvironmentService;
+  readonly history?: IHistoryService;
 }
 
 export class MessageRouter implements vscode.Disposable {
@@ -278,6 +290,18 @@ export class MessageRouter implements vscode.Disposable {
         await this.handleImport(msg.correlationId);
         break;
 
+      case 'request:get-history':
+        this.handleGetHistory(msg.correlationId, msg.payload.path);
+        break;
+
+      case 'request:clear-history':
+        this.handleClearHistory(msg.payload.path);
+        break;
+
+      case 'request:delete-history-entry':
+        this.handleDeleteHistoryEntry(msg.payload.path, msg.payload.timestamp);
+        break;
+
       default: {
         // Exhaustiveness guard — TypeScript will error if a new variant is
         // added to HostMessage without being handled here.
@@ -408,6 +432,22 @@ export class MessageRouter implements vscode.Disposable {
       }
 
       this.sendToWebview({ type: 'response:execute-http', correlationId, payload: response });
+
+      // Record execution in history (only for saved requests with a savePath — REQ-HIST-001)
+      if (this.services.history && request.id) {
+        const entry: HistoryEntry = {
+          timestamp: new Date().toISOString(),
+          method: resolvedRequest.method,
+          url: resolvedRequest.url,
+          status: response.status,
+          statusText: response.statusText,
+          time: response.timing.total,
+          success: response.status >= 200 && response.status < 400,
+          body: response.body,
+          headers: response.headers,
+        };
+        this.services.history.addEntry(request.id, entry);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       // Map structured error codes from HttpService (attached as err.code)
@@ -1063,6 +1103,30 @@ export class MessageRouter implements vscode.Disposable {
       this.output.appendLine(`[MessageRouter] ERROR in save-to-file: ${message}`);
       void vscode.window.showErrorMessage(`Volt: Failed to save file — ${message}`);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // History handlers
+  // ---------------------------------------------------------------------------
+
+  /** Return the execution history for a saved request path. */
+  private handleGetHistory(correlationId: CorrelationId, requestPath: string): void {
+    const entries = this.services.history?.getHistory(requestPath) ?? [];
+    this.sendToWebview({
+      type: 'response:history',
+      correlationId,
+      payload: { path: requestPath, entries },
+    });
+  }
+
+  /** Delete the history file for a saved request path. */
+  private handleClearHistory(requestPath: string): void {
+    this.services.history?.clearHistory(requestPath);
+  }
+
+  /** Delete a single history entry by timestamp. */
+  private handleDeleteHistoryEntry(requestPath: string, timestamp: string): void {
+    this.services.history?.deleteEntry(requestPath, timestamp);
   }
 
   // ---------------------------------------------------------------------------

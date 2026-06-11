@@ -255,6 +255,14 @@
   height: 100%;
 }
 
+.rv-body-actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--volt-border);
+  flex-shrink: 0;
+}
+
 .rv-body-warning {
   display: flex;
   align-items: center;

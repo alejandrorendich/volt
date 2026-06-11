@@ -366,20 +366,26 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     set(patch);
   },
 
-  addHeader: () =>
+  addHeader: () => {
     set((s) => ({
       headers: [...s.headers, { id: generateId(), key: '', value: '', enabled: true }],
-    })),
+    }));
+    get().markDirty();
+  },
 
-  updateHeader: (id, patch) =>
+  updateHeader: (id, patch) => {
     set((s) => ({
       headers: s.headers.map((h) => (h.id === id ? { ...h, ...patch } : h)),
-    })),
+    }));
+    get().markDirty();
+  },
 
-  removeHeader: (id) =>
+  removeHeader: (id) => {
     set((s) => ({
       headers: s.headers.filter((h) => h.id !== id),
-    })),
+    }));
+    get().markDirty();
+  },
 
   // Form-data row actions — independent from HTTP headers (C-02)
   addFormRow: () =>
@@ -397,25 +403,34 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       formDataRows: s.formDataRows.filter((r) => r.id !== id),
     })),
 
-  addParam: () =>
+  addParam: () => {
     set((s) => {
       const newParams: QueryParam[] = [...s.queryParams, { key: '', value: '', enabled: true }];
       return { queryParams: newParams, url: buildUrl(s.baseUrl, newParams) };
-    }),
+    });
+    get().markDirty();
+  },
 
-  updateParam: (index, patch) =>
+  updateParam: (index, patch) => {
     set((s) => {
       const newParams = s.queryParams.map((p, i) => (i === index ? { ...p, ...patch } : p));
       return { queryParams: newParams, url: buildUrl(s.baseUrl, newParams) };
-    }),
+    });
+    get().markDirty();
+  },
 
-  removeParam: (index) =>
+  removeParam: (index) => {
     set((s) => {
       const newParams = s.queryParams.filter((_, i) => i !== index);
       return { queryParams: newParams, url: buildUrl(s.baseUrl, newParams) };
-    }),
+    });
+    get().markDirty();
+  },
 
-  setBody: (body) => set({ body }),
+  setBody: (body) => {
+    set({ body });
+    get().markDirty();
+  },
 
   setPreScript: (preScript) => {
     set({ preScript });

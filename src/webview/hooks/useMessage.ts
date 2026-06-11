@@ -32,6 +32,11 @@ function getVsCodeApi(): ReturnType<typeof acquireVsCodeApi> {
   return _vscodeApi;
 }
 
+/** Send a message to the host from outside React hooks. */
+export function postMessageToHost(msg: HostMessage): void {
+  getVsCodeApi().postMessage(msg);
+}
+
 // ---------------------------------------------------------------------------
 // Pending reply map (correlationId → resolve/reject)
 // ---------------------------------------------------------------------------

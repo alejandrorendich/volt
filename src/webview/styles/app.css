@@ -66,10 +66,16 @@
 }
 
 .volt-split__divider {
-  width: 1px;
+  width: 4px;
   background: var(--volt-border);
   flex-shrink: 0;
   cursor: col-resize;
+  transition: background 0.15s;
+}
+
+.volt-split__divider:hover,
+.volt-split__divider:active {
+  background: var(--vscode-focusBorder);
 }
 
 /* Narrow sidebar: stack vertically below 600px */

@@ -177,6 +177,14 @@ const BodyDisplay = memo(function BodyDisplay({ response }: BodyDisplayProps): R
           Response truncated at host (50 MB limit) — actual size: {formatBytes(bodySize)}
         </div>
       )}
+      <div className="rv-body-actions">
+        <button type="button" className="rv-action-btn" onClick={copyBody} title="Copy to clipboard">
+          Copy
+        </button>
+        <button type="button" className="rv-action-btn" onClick={saveToFile} title="Save response to file">
+          Save
+        </button>
+      </div>
       {isJson && prettyJson !== null ? (
         <pre
           className="rv-body-pre rv-json"

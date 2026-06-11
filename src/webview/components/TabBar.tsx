@@ -67,17 +67,6 @@ export const TabBar = memo(function TabBar(): React.ReactElement {
           )}
         </button>
       ))}
-
-      {/* Add new tab */}
-      <button
-        type="button"
-        className="tab-bar__add"
-        onClick={addTab}
-        aria-label="New request tab"
-        title="New request"
-      >
-        +
-      </button>
     </div>
   );
 });

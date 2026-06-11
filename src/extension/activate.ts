@@ -20,6 +20,8 @@ import { MessageRouter } from './message-router';
 import { HttpService } from './services/http-service';
 import { EnvironmentService } from './services/environment-service';
 import { CollectionService } from './services/collection-service';
+import { HistoryService } from './services/history-service';
+import { importPostmanCollection } from './services/postman-import';
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -73,11 +75,18 @@ export function activate(context: vscode.ExtensionContext): void {
     collectionService.initialise();
   }
 
+  // 2d. History Service — requires workspace
+  let historyService: HistoryService | undefined;
+  if (workspaceRoot) {
+    historyService = new HistoryService(output, workspaceRoot);
+  }
+
   // 3. Message router — all Phase 3+4 services injected
   const router = new MessageRouter(output, {
     http: httpService,
     ...(collectionService ? { collection: collectionService } : {}),
     ...(environmentService ? { environment: environmentService } : {}),
+    ...(historyService ? { history: historyService } : {}),
   });
   context.subscriptions.push(router);
   if (environmentService) {
@@ -372,6 +381,51 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         undefined as unknown as vscode.Webview,
       );
+    }),
+  );
+
+  // volt.importPostman — import a Postman v2.1 collection JSON
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.importPostman', async () => {
+      output.appendLine('[Volt] Command: volt.importPostman');
+
+      if (!collectionService || !environmentService) {
+        vscode.window.showWarningMessage('Volt: Open a folder to import a Postman collection.');
+        return;
+      }
+
+      const uris = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: 'Import',
+        filters: { 'Postman Collection': ['json'] },
+        title: 'Import Postman Collection',
+      });
+
+      if (!uris || uris.length === 0) return;
+
+      const filePath = uris[0]?.fsPath;
+      if (!filePath) return;
+
+      try {
+        const result = await importPostmanCollection(
+          filePath,
+          collectionService,
+          environmentService,
+          output,
+        );
+
+        treeProvider.refresh();
+
+        await vscode.window.showInformationMessage(
+          `Volt: Imported ${result.requests} request${result.requests !== 1 ? 's' : ''}, ` +
+          `${result.folders} folder${result.folders !== 1 ? 's' : ''}, ` +
+          `${result.variables} variable${result.variables !== 1 ? 's' : ''}.`,
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[Volt] ERROR in importPostman: ${msg}`);
+        await vscode.window.showErrorMessage(`Volt: Postman import failed — ${msg}`);
+      }
     }),
   );
 

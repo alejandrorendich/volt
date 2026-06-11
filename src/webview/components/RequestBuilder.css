@@ -457,3 +457,192 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ---------------------------------------------------------------------------
+ * History panel
+ * --------------------------------------------------------------------------- */
+
+/* Panel scrollable override for history */
+.rb-panel--history {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.rb-history {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Empty state */
+.rb-history--empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-6);
+  color: var(--volt-fg-secondary);
+}
+
+.rb-history__empty-icon {
+  font-size: 24px;
+  opacity: 0.5;
+}
+
+.rb-history__empty-text {
+  font-size: var(--volt-font-size-sm);
+  text-align: center;
+}
+
+/* Scrollable list */
+.rb-history__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--volt-space-2) 0;
+  min-height: 0;
+}
+
+/* Single entry row */
+.rb-history__entry {
+  display: grid;
+  grid-template-columns: 44px 54px 1fr auto auto auto;
+  align-items: center;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-2) var(--volt-space-5);
+  border-bottom: 1px solid var(--volt-border);
+  font-size: var(--volt-font-size-sm);
+  transition: background 0.1s;
+  cursor: pointer;
+}
+
+.rb-history__entry:hover {
+  background: var(--volt-bg-hover);
+}
+
+.rb-history__entry:last-child {
+  border-bottom: none;
+}
+
+.rb-history__delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+
+.rb-history__entry:hover .rb-history__delete-btn {
+  opacity: 1;
+}
+
+.rb-history__delete-btn:hover {
+  color: var(--vscode-errorForeground, #f44747);
+  background: var(--vscode-inputValidation-errorBackground, rgba(244,71,71,0.08));
+}
+
+/* Status badge */
+.rb-history__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--volt-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: var(--volt-radius-sm);
+  min-width: 36px;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.rb-history__status--success {
+  background: rgba(35, 134, 54, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(35, 134, 54, 0.3);
+}
+
+.rb-history__status--redirect {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
+.rb-history__status--error {
+  background: rgba(241, 76, 76, 0.12);
+  color: var(--volt-fg-error, #f14c4c);
+  border: 1px solid rgba(241, 76, 76, 0.3);
+}
+
+/* Method */
+.rb-history__method {
+  font-family: var(--volt-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--volt-fg-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* URL */
+.rb-history__url {
+  font-family: var(--volt-font-mono);
+  font-size: 11px;
+  color: var(--volt-fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Response time */
+.rb-history__time {
+  font-family: var(--volt-font-mono);
+  font-size: 11px;
+  color: var(--volt-fg-secondary);
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Relative timestamp */
+.rb-history__timestamp {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  text-align: right;
+  min-width: 70px;
+}
+
+/* Footer with clear button */
+.rb-history__footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--volt-space-3) var(--volt-space-5);
+  border-top: 1px solid var(--volt-border);
+}
+
+.rb-history__clear-btn {
+  background: transparent;
+  border: 1px solid var(--volt-border-input);
+  border-radius: var(--volt-radius-sm);
+  color: var(--volt-fg-secondary);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size-sm);
+  padding: var(--volt-space-1) var(--volt-space-4);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.rb-history__clear-btn:hover {
+  border-color: var(--volt-fg-error, #f14c4c);
+  color: var(--volt-fg-error, #f14c4c);
+  background: rgba(241, 76, 76, 0.08);
+}

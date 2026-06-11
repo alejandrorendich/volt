@@ -237,6 +237,43 @@ export interface ImportMessage {
   readonly correlationId: CorrelationId;
 }
 
+/**
+ * Ask the host for the execution history of a saved request.
+ * The host replies with `response:history`.
+ */
+export interface GetHistoryMessage {
+  readonly type: 'request:get-history';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    /** Relative path of the saved request, without extension (e.g. `auth/login`) */
+    readonly path: string;
+  };
+}
+
+/**
+ * Ask the host to clear all history for a saved request.
+ * No reply is sent; the webview should reset local history state immediately.
+ */
+export interface ClearHistoryMessage {
+  readonly type: 'request:clear-history';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly path: string;
+  };
+}
+
+/**
+ * Delete a single entry from a request's execution history by timestamp.
+ */
+export interface DeleteHistoryEntryMessage {
+  readonly type: 'request:delete-history-entry';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly path: string;
+    readonly timestamp: string;
+  };
+}
+
 /** All messages originating from the webview. */
 export type HostMessage =
   | ExecuteRequestMessage
@@ -255,7 +292,10 @@ export type HostMessage =
   | PickBinaryFileMessage
   | ExportRequestMessage
   | ExportFolderMessage
-  | ImportMessage;
+  | ImportMessage
+  | GetHistoryMessage
+  | ClearHistoryMessage
+  | DeleteHistoryEntryMessage;
 
 // ---------------------------------------------------------------------------
 // Host → Webview messages  (prefix: `response:*` or `event:*`)
@@ -377,6 +417,36 @@ export interface BinaryFilePickedMessage {
   readonly payload: { readonly path: string; readonly name: string } | null;
 }
 
+/**
+ * A single entry in a request's execution history.
+ */
+export interface HistoryEntry {
+  readonly timestamp: string;
+  readonly method: string;
+  readonly url: string;
+  readonly status: number;
+  readonly statusText: string;
+  readonly time: number;
+  readonly success: boolean;
+  /** Response body (stored for replay in the response viewer) */
+  readonly body?: string;
+  /** Response headers */
+  readonly headers?: Record<string, string>;
+}
+
+/**
+ * Reply to `request:get-history`. Contains the history entries for the
+ * requested path, newest first.
+ */
+export interface HistoryResponseMessage {
+  readonly type: 'response:history';
+  readonly correlationId: CorrelationId;
+  readonly payload: {
+    readonly path: string;
+    readonly entries: HistoryEntry[];
+  };
+}
+
 /** All messages originating from the extension host. */
 export type WebviewMessage =
   | ExecuteResponseMessage
@@ -387,4 +457,5 @@ export type WebviewMessage =
   | LoadRequestMessage
   | RequestSavedMessage
   | ScriptErrorMessage
-  | BinaryFilePickedMessage;
+  | BinaryFilePickedMessage
+  | HistoryResponseMessage;
