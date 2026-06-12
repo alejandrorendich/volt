@@ -341,11 +341,11 @@
 }
 
 /* JSON syntax highlighting */
-.rv-json-key    { color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe); }
-.rv-json-string { color: var(--vscode-symbolIcon-stringForeground, #ce9178); }
-.rv-json-number { color: var(--vscode-symbolIcon-numberForeground, #b5cea8); }
-.rv-json-bool   { color: var(--vscode-symbolIcon-booleanForeground, #569cd6); }
-.rv-json-null   { color: var(--vscode-symbolIcon-nullForeground, #569cd6); }
+.rv-json-key    { color: #9cdcfe; }
+.rv-json-string { color: #ce9178; }
+.rv-json-number { color: #b5cea8; }
+.rv-json-bool   { color: #569cd6; }
+.rv-json-null   { color: #808080; }
 
 .rv-body-binary {
   flex: 1;
