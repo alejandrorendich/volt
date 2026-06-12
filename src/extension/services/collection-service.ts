@@ -268,6 +268,20 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
       throw new Error(`A request named "${newNorm}" already exists.`);
     }
 
+    // Update the `name` field inside the YAML before renaming the file
+    try {
+      const content = fs.readFileSync(oldAbs, 'utf8');
+      const raw = yaml.load(content) as Record<string, unknown> | null;
+      if (raw && typeof raw === 'object') {
+        const newName = newNorm.split('/').pop() ?? newNorm;
+        raw['name'] = newName;
+        const updated = yaml.dump(raw, { lineWidth: -1, noRefs: true });
+        fs.writeFileSync(oldAbs, updated, 'utf8');
+      }
+    } catch {
+      // Non-fatal — file will still be renamed even if YAML update fails
+    }
+
     await this.ensureDir(path.dirname(newAbs));
     fs.renameSync(oldAbs, newAbs);
 
