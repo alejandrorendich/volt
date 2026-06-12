@@ -281,7 +281,7 @@ function generateNode(req: HttpRequestDef): string {
   const headerEntries = Object.entries(req.headers);
   const allHeaders: Record<string, string> = { ...Object.fromEntries(headerEntries) };
   if (body) {
-    allHeaders['Content-Length'] = String(Buffer.byteLength(body, 'utf8'));
+    allHeaders['Content-Length'] = String(new TextEncoder().encode(body).byteLength);
   }
 
   lines.push('const options = {');
