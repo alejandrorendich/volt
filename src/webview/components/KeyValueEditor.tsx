@@ -30,11 +30,20 @@ export interface KeyValueEditorProps {
   onAdd: () => void;
   onUpdate: (id: string, patch: Partial<Pick<KVRow, 'key' | 'value' | 'enabled'>>) => void;
   onRemove: (id: string) => void;
+  /**
+   * Optional callback invoked when exiting bulk-edit mode with the fully
+   * parsed replacement rows (without trailing empty row).
+   * When provided, the editor delegates the replace entirely to the parent
+   * instead of using the individual onAdd/onRemove calls.
+   */
+  onBulkReplace?: (rows: KVRow[]) => void;
   keyPlaceholder?: string;
   valuePlaceholder?: string;
   /** Suggest common keys in a datalist. */
   keySuggestions?: readonly string[];
   disabled?: boolean;
+  /** Environment variable map for resolving {{var}} tooltips in values. */
+  envVariables?: Readonly<Record<string, string>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,19 +51,31 @@ export interface KeyValueEditorProps {
 // ---------------------------------------------------------------------------
 
 /** Returns JSX that renders a value with {{var}} tokens highlighted. */
-function HighlightedValue({ value }: { value: string }): React.ReactElement {
+function HighlightedValue({
+  value,
+  envVariables,
+}: {
+  value: string;
+  envVariables?: Readonly<Record<string, string>>;
+}): React.ReactElement {
   const parts = value.split(/({{[^}]+}})/g);
   return (
     <>
-      {parts.map((part, i) =>
-        part.startsWith('{{') && part.endsWith('}}') ? (
-          <mark key={i} className="kv-var">
-            {part}
-          </mark>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
+      {parts.map((part, i) => {
+        if (part.startsWith('{{') && part.endsWith('}}')) {
+          const varName = part.slice(2, -2).trim();
+          const resolved = envVariables?.[varName];
+          const title = resolved !== undefined
+            ? `${part} → ${resolved}`
+            : `${part} (not resolved)`;
+          return (
+            <mark key={i} className="kv-var" title={title}>
+              {part}
+            </mark>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
     </>
   );
 }
@@ -71,6 +92,7 @@ interface RowProps {
   valuePlaceholder: string;
   disabled: boolean;
   datalistId: string;
+  envVariables?: Readonly<Record<string, string>>;
   onUpdate: (id: string, patch: Partial<Pick<KVRow, 'key' | 'value' | 'enabled'>>) => void;
   onRemove: (id: string) => void;
   onAdd: () => void;
@@ -83,6 +105,7 @@ const KVRow = memo(function KVRow({
   valuePlaceholder,
   disabled,
   datalistId,
+  envVariables,
   onUpdate,
   onRemove,
   onAdd,
@@ -147,7 +170,9 @@ const KVRow = memo(function KVRow({
       <div className="kv-cell kv-cell--value">
         <div className="kv-value-wrap">
           <div className="kv-value-highlight" aria-hidden="true">
-            <HighlightedValue value={row.value} />
+            {envVariables !== undefined
+              ? <HighlightedValue value={row.value} envVariables={envVariables} />
+              : <HighlightedValue value={row.value} />}
           </div>
           <input
             type="text"
@@ -181,20 +206,34 @@ const KVRow = memo(function KVRow({
 // Bulk-edit mode: parse raw text → KVRow[]
 // ---------------------------------------------------------------------------
 
+/**
+ * Serialize rows to text. Disabled rows get a `# ` prefix so they survive
+ * round-trips through the bulk editor without losing their disabled state.
+ */
 function rowsToText(rows: KVRow[]): string {
   return rows
     .filter((r) => r.key.trim() !== '')
-    .map((r) => `${r.key}: ${r.value}`)
+    .map((r) => `${r.enabled ? '' : '# '}${r.key}: ${r.value}`)
     .join('\n');
 }
 
+/**
+ * Parse bulk text into KVRow[].
+ * Lines starting with `# ` are treated as disabled rows.
+ * Lines without `:` are skipped.
+ * Empty lines are skipped.
+ */
 function textToRows(text: string): KVRow[] {
   const lines = text.split('\n').filter((l) => l.trim() !== '');
-  return lines.map((line) => {
-    const colon = line.indexOf(':');
-    const key = colon === -1 ? line.trim() : line.slice(0, colon).trim();
-    const value = colon === -1 ? '' : line.slice(colon + 1).trim();
-    return { id: `bulk-${Math.random().toString(36).slice(2)}`, key, value, enabled: true };
+  return lines.flatMap((line) => {
+    const disabled = line.startsWith('# ');
+    const cleaned = disabled ? line.slice(2) : line;
+    const colon = cleaned.indexOf(':');
+    if (colon === -1) return []; // Skip lines without a colon
+    const key = cleaned.slice(0, colon).trim();
+    const value = cleaned.slice(colon + 1).trim();
+    if (key === '') return []; // Skip lines with empty key
+    return [{ id: `bulk-${Math.random().toString(36).slice(2)}`, key, value, enabled: !disabled }];
   });
 }
 
@@ -207,10 +246,12 @@ export const KeyValueEditor = memo(function KeyValueEditor({
   onAdd,
   onUpdate,
   onRemove,
+  onBulkReplace,
   keyPlaceholder = 'Key',
   valuePlaceholder = 'Value',
   keySuggestions,
   disabled = false,
+  envVariables,
 }: KeyValueEditorProps): React.ReactElement {
   const uid = useId();
   const datalistId = keySuggestions && keySuggestions.length > 0 ? `kv-suggestions-${uid}` : '';
@@ -224,30 +265,22 @@ export const KeyValueEditor = memo(function KeyValueEditor({
 
   const exitBulk = useCallback(() => {
     const parsed = textToRows(bulkText);
-    // Replace all rows via a synthetic sequence: remove all, add parsed
-    // We communicate back through the parent's callbacks via a reset trick.
-    // Since KeyValueEditor is controlled, we emit a synthetic event batch.
-    // Simpler approach: expose an `onBulkReplace` prop — but to keep API
-    // minimal we signal via removing all existing rows and calling onAdd.
-    // NOTE: This only works if parent supports the pattern. For headers/params
-    // in RequestBuilder, the stores expose replace-all capability indirectly
-    // via individual updates. For a clean DX we instead just call onUpdate/onRemove.
-
-    // Remove non-empty existing rows
-    for (const r of rows) {
-      if (r.key.trim() !== '') onRemove(r.id);
+    if (onBulkReplace) {
+      // Preferred path: parent handles the atomic replace
+      onBulkReplace(parsed);
+    } else {
+      // Fallback: individual remove + add cycle
+      for (const r of rows) {
+        if (r.key.trim() !== '') onRemove(r.id);
+      }
+      for (const _p of parsed) {
+        onAdd();
+      }
+      // eslint-disable-next-line no-console -- dev-mode bulk workaround signal
+      console.debug('[Volt] bulk-replace (no onBulkReplace provided)', parsed);
     }
-    // Add parsed rows
-    for (const p of parsed) {
-      onAdd();
-      // We cannot set the value of the just-added row without knowing its id
-      // The parent must handle the bulk case via a dedicated callback.
-      // We work around by emitting a custom event the parent can listen to.
-    }
-    // eslint-disable-next-line no-console -- dev-mode bulk workaround signal
-    console.debug('[Volt] bulk-replace', parsed);
     setBulkMode(false);
-  }, [bulkText, rows, onRemove, onAdd]);
+  }, [bulkText, rows, onRemove, onAdd, onBulkReplace]);
 
   // Ensure there is always an empty trailing row
   const displayRows = React.useMemo(() => {
@@ -297,6 +330,7 @@ export const KeyValueEditor = memo(function KeyValueEditor({
               valuePlaceholder={valuePlaceholder}
               disabled={disabled}
               datalistId={datalistId}
+              {...(envVariables !== undefined ? { envVariables } : {})}
               onUpdate={onUpdate}
               onRemove={onRemove}
               onAdd={onAdd}

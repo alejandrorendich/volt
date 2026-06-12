@@ -2,7 +2,7 @@
   "name": "volt",
   "displayName": "Volt",
   "description": "Fast, free HTTP client for VS Code",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "publisher": "volt-dev",
   "license": "MIT",
   "private": true,
@@ -36,7 +36,9 @@
     "onCommand:volt.renameRequest",
     "onCommand:volt.copyAsCurl",
     "onCommand:volt.runCollection",
-    "onCommand:volt.clearCookies"
+    "onCommand:volt.clearCookies",
+    "onCommand:volt.createCrudScaffold",
+    "onCommand:volt.importCurl"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -168,6 +170,18 @@
         "title": "Clear Cookie Jar",
         "category": "Volt",
         "icon": "$(trash)"
+      },
+      {
+        "command": "volt.createCrudScaffold",
+        "title": "Create CRUD Scaffold",
+        "category": "Volt",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "volt.importCurl",
+        "title": "Import from cURL (Clipboard)",
+        "category": "Volt",
+        "icon": "$(terminal-bash)"
       }
     ],
     "keybindings": [
@@ -214,6 +228,16 @@
         },
         {
           "command": "volt.importPostman",
+          "when": "view == volt.collectionTree",
+          "group": "navigation"
+        },
+        {
+          "command": "volt.createCrudScaffold",
+          "when": "view == volt.collectionTree",
+          "group": "navigation"
+        },
+        {
+          "command": "volt.importCurl",
           "when": "view == volt.collectionTree",
           "group": "navigation"
         }
@@ -283,6 +307,11 @@
           "command": "volt.importPostman",
           "when": "view == volt.collectionTree",
           "group": "import@2"
+        },
+        {
+          "command": "volt.importCurl",
+          "when": "view == volt.collectionTree",
+          "group": "import@3"
         }
       ]
     },

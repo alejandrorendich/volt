@@ -151,7 +151,7 @@
 
 /* Disconnect (WS) variant — red/destructive */
 .rb-send--disconnect {
-  background: var(--volt-error, #c72e2e);
+  background: var(--vscode-inputValidation-errorBorder, var(--volt-fg-error, #c72e2e));
   color: #fff;
 }
 
@@ -213,13 +213,13 @@
 }
 
 .rb-save--dirty {
-  background: #2ea04370;
-  color: #4ade80;
-  border-color: #2ea04380;
+  background: rgba(46, 160, 67, 0.25);
+  color: var(--vscode-testing-iconPassed, #4ade80);
+  border-color: rgba(46, 160, 67, 0.4);
 }
 
 .rb-save--dirty:hover {
-  background: #2ea04390;
+  background: rgba(46, 160, 67, 0.35);
 }
 
 /* ---------------------------------------------------------------------------
@@ -275,8 +275,8 @@
 }
 
 .rb-badge--error {
-  background: var(--volt-fg-error, #f14c4c);
-  color: #ffffff;
+  background: rgba(241, 76, 76, 0.15);
+  color: var(--vscode-errorForeground, #f14c4c);
   font-size: var(--volt-font-size-sm);
   font-weight: 700;
   padding: 0 var(--volt-space-2);
@@ -288,7 +288,7 @@
 
 .rb-badge--pass {
   background: rgba(35, 134, 54, 0.2);
-  color: #3fb950;
+  color: var(--vscode-testing-iconPassed, #3fb950);
   font-size: var(--volt-font-size-sm);
   font-weight: 700;
   padding: 0 var(--volt-space-2);
@@ -597,6 +597,31 @@
   overflow: hidden;
 }
 
+/* Sparkline — response time trend above the history list */
+.rb-history__sparkline {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-3);
+  padding: var(--volt-space-2) var(--volt-space-5);
+  border-bottom: 1px solid var(--volt-border);
+  background: var(--volt-bg-surface);
+  flex-shrink: 0;
+}
+
+.rb-history__sparkline-svg {
+  flex: 1;
+  height: 30px;
+  display: block;
+}
+
+.rb-history__sparkline-label {
+  font-size: var(--volt-font-size-xs, 10px);
+  color: var(--volt-fg-secondary);
+  flex-shrink: 0;
+  font-family: var(--volt-font-mono);
+  white-space: nowrap;
+}
+
 /* Empty state */
 .rb-history--empty {
   flex: 1;
@@ -686,19 +711,19 @@
 
 .rb-history__status--success {
   background: rgba(35, 134, 54, 0.15);
-  color: #3fb950;
+  color: var(--vscode-testing-iconPassed, #3fb950);
   border: 1px solid rgba(35, 134, 54, 0.3);
 }
 
 .rb-history__status--redirect {
   background: rgba(210, 153, 34, 0.15);
-  color: #d29922;
+  color: var(--volt-status-3xx, #d29922);
   border: 1px solid rgba(210, 153, 34, 0.3);
 }
 
 .rb-history__status--error {
   background: rgba(241, 76, 76, 0.12);
-  color: var(--volt-fg-error, #f14c4c);
+  color: var(--vscode-errorForeground, #f14c4c);
   border: 1px solid rgba(241, 76, 76, 0.3);
 }
 
@@ -842,7 +867,7 @@
 /* Auth badge variant */
 .rb-badge--auth {
   background: rgba(88, 166, 255, 0.15);
-  color: #58a6ff;
+  color: var(--vscode-textLink-foreground, #58a6ff);
   font-size: var(--volt-font-size-sm);
   font-weight: 700;
   padding: 0 var(--volt-space-2);
@@ -851,4 +876,67 @@
   text-align: center;
   line-height: 1.4;
   border: 1px solid rgba(88, 166, 255, 0.25);
+}
+
+/* ---------------------------------------------------------------------------
+ * Notes area (collapsible description)
+ * --------------------------------------------------------------------------- */
+.rb-notes {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--volt-border);
+  flex-shrink: 0;
+}
+
+.rb-notes__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  background: none;
+  border: none;
+  color: var(--volt-fg-secondary);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size-sm);
+  padding: var(--volt-space-1) var(--volt-space-5);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.1s;
+  height: 22px;
+}
+
+.rb-notes__toggle:hover {
+  color: var(--volt-fg-primary);
+}
+
+.rb-notes__toggle--has-content {
+  color: var(--volt-fg-primary);
+}
+
+.rb-notes__icon {
+  font-size: 9px;
+  flex-shrink: 0;
+  width: 10px;
+  text-align: center;
+}
+
+.rb-notes__label {
+  font-size: var(--volt-font-size-sm);
+}
+
+.rb-notes__textarea {
+  resize: none;
+  background: var(--volt-input-bg);
+  color: var(--volt-input-fg);
+  border: none;
+  border-top: 1px solid var(--volt-border);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size-sm);
+  line-height: 1.5;
+  padding: var(--volt-space-3) var(--volt-space-5);
+  outline: none;
+  width: 100%;
+}
+
+.rb-notes__textarea:focus {
+  background: var(--volt-input-bg);
 }

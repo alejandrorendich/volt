@@ -119,6 +119,12 @@ function PlainTextWithHighlight({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Body sub-tab type
+// ---------------------------------------------------------------------------
+
+type BodySubTab = 'pretty' | 'raw' | 'preview';
+
 interface BodyDisplayProps {
   response: HttpResponseDef;
   searchTerm: string;
@@ -135,6 +141,9 @@ const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisp
 
   const tooLarge = body.length > MAX_DISPLAY_BYTES;
   const displayBody = tooLarge ? body.slice(0, MAX_DISPLAY_BYTES) : body;
+
+  // Sub-tab state — local only, not persisted
+  const [subTab, setSubTab] = useState<BodySubTab>('pretty');
 
   const { send } = useMessage();
 
@@ -212,8 +221,56 @@ const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisp
     );
   }
 
+  // Determine which sub-tabs are available
+  const showPreviewTab = isHtml;
+  // If isHtml and subTab is 'preview', show preview; correct auto-select handled below
+  const activeSubTab: BodySubTab = (!showPreviewTab && subTab === 'preview') ? 'pretty' : subTab;
+
   return (
     <div className="rv-body-raw">
+      {/* Sub-tabs: Pretty / Raw / Preview */}
+      <div className="rv-sub-tabs" role="tablist" aria-label="Body view mode">
+        <button
+          role="tab"
+          type="button"
+          className={`rv-sub-tab${activeSubTab === 'pretty' ? ' rv-sub-tab--active' : ''}`}
+          onClick={() => setSubTab('pretty')}
+          aria-selected={activeSubTab === 'pretty'}
+        >
+          Pretty
+        </button>
+        <button
+          role="tab"
+          type="button"
+          className={`rv-sub-tab${activeSubTab === 'raw' ? ' rv-sub-tab--active' : ''}`}
+          onClick={() => setSubTab('raw')}
+          aria-selected={activeSubTab === 'raw'}
+        >
+          Raw
+        </button>
+        {showPreviewTab && (
+          <button
+            role="tab"
+            type="button"
+            className={`rv-sub-tab${activeSubTab === 'preview' ? ' rv-sub-tab--active' : ''}`}
+            onClick={() => setSubTab('preview')}
+            aria-selected={activeSubTab === 'preview'}
+          >
+            Preview
+          </button>
+        )}
+
+        {/* Actions pushed to the right */}
+        <div className="rv-sub-tabs__actions">
+          <button type="button" className="rv-action-btn" onClick={copyBody} title="Copy to clipboard">
+            Copy
+          </button>
+          <button type="button" className="rv-action-btn" onClick={saveToFile} title="Save response to file">
+            Save
+          </button>
+        </div>
+      </div>
+
       {tooLarge && (
         <div className="rv-body-warning" role="alert">
           <span>Response too large — showing first {formatBytes(MAX_DISPLAY_BYTES)} of {formatBytes(bodySize)}</span>
@@ -227,28 +284,45 @@ const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisp
           Response truncated at host (50 MB limit) — actual size: {formatBytes(bodySize)}
         </div>
       )}
-      <div className="rv-body-actions">
-        <button type="button" className="rv-action-btn" onClick={copyBody} title="Copy to clipboard">
-          Copy
-        </button>
-        <button type="button" className="rv-action-btn" onClick={saveToFile} title="Save response to file">
-          Save
-        </button>
-      </div>
-      {isJson && prettyJson !== null ? (
-        <pre
-          className="rv-body-pre rv-json"
-          // eslint-disable-next-line react/no-danger -- intentional syntax highlight
-          dangerouslySetInnerHTML={{ __html: applySearchHighlightHtml(highlightJson(prettyJson), searchTerm) }}
-          aria-label="Response body (JSON)"
-        />
-      ) : (
-        <pre
-          className={`rv-body-pre${isHtml || isXml ? ' rv-body-pre--markup' : ''}`}
-          aria-label="Response body"
-        >
-          <PlainTextWithHighlight text={displayBody} term={searchTerm} />
+
+      {/* Pretty tab */}
+      {activeSubTab === 'pretty' && (
+        isJson && prettyJson !== null ? (
+          <pre
+            className="rv-body-pre rv-json"
+            // eslint-disable-next-line react/no-danger -- intentional syntax highlight
+            dangerouslySetInnerHTML={{ __html: applySearchHighlightHtml(highlightJson(prettyJson), searchTerm) }}
+            aria-label="Response body (JSON)"
+          />
+        ) : (
+          <pre
+            className={`rv-body-pre${isHtml || isXml ? ' rv-body-pre--markup' : ''}`}
+            aria-label="Response body"
+          >
+            <PlainTextWithHighlight text={displayBody} term={searchTerm} />
+          </pre>
+        )
+      )}
+
+      {/* Raw tab — exact response text, no highlighting */}
+      {activeSubTab === 'raw' && (
+        <pre className="rv-body-pre" aria-label="Response body (raw)">
+          {displayBody}
         </pre>
+      )}
+
+      {/* Preview tab — sandboxed HTML render */}
+      {activeSubTab === 'preview' && showPreviewTab && (
+        <div className="rv-body-preview">
+          {/* eslint-disable-next-line react/iframe-missing-sandbox -- sandbox is explicitly set */}
+          <iframe
+            className="rv-body-preview__frame"
+            srcDoc={displayBody}
+            sandbox=""
+            title="HTML preview (sandboxed)"
+            aria-label="HTML preview"
+          />
+        </div>
       )}
     </div>
   );

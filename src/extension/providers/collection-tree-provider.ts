@@ -212,19 +212,64 @@ export class CollectionTreeProvider
     for (const relPath of paths) {
       if (!relPath) continue;
 
-      try {
-        // Move the YAML file to the target folder
-        const fileName = relPath.split('/').pop() ?? relPath;
-        const newRelPath = targetFolderName ? `${targetFolderName}/${fileName}` : fileName;
+      // Determine source folder (undefined = root)
+      const sourceFolderName = relPath.includes('/') ? relPath.split('/')[0] : undefined;
 
-        if (newRelPath !== relPath) {
-          // Load the request from its current location
-          const request = await this.collectionService.loadRequest(relPath);
-          // Save it at the new location
-          await this.collectionService.saveRequest(newRelPath, request);
-          // Delete the old file
-          await this.collectionService.deleteRequest(relPath);
+      // Check if this is a same-folder drop (reorder) or cross-folder move
+      const isSameLocation = sourceFolderName === targetFolderName;
+
+      try {
+        if (isSameLocation && target?.kind === 'request') {
+          // Same folder drop onto a request — reorder in collection.yaml
+          const tree = await this.collectionService.loadTree();
+          const siblings: import('../../shared/models').CollectionTreeNode[] = targetFolderName
+            ? (() => {
+                const folder = findFolderByName(tree.nodes, targetFolderName);
+                return folder ? [...folder.children] : [];
+              })()
+            : [...tree.nodes];
+
+          // Build a new order with draggedPath before targetPath
+          const targetRelPath = target.requestPath ?? '';
+          const draggedRelPath = relPath;
+
+          const newOrder: import('../../shared/models').CollectionOrderEntry[] = [];
+          for (const node of siblings) {
+            const nodeRelPath = node.kind === 'request' ? node.path : node.name;
+            const isFolder = node.kind === 'folder';
+            if (nodeRelPath === draggedRelPath) continue; // skip the dragged item
+            if (nodeRelPath === targetRelPath && !isFolder) {
+              // Insert dragged item before the target
+              newOrder.push({ request: draggedRelPath });
+            }
+            newOrder.push(isFolder ? { folder: nodeRelPath } : { request: nodeRelPath });
+          }
+          // Append dragged if target wasn't found (drop at end)
+          const alreadyAdded = newOrder.some((e) => 'request' in e && e.request === draggedRelPath);
+          if (!alreadyAdded) {
+            newOrder.push({ request: draggedRelPath });
+          }
+
+          // Merge with existing order (only update the relevant folder scope)
+          if (targetFolderName) {
+            // For folder-scoped ordering we only update the top-level order in collection.yaml
+            // The order within folders follows collection.yaml folder entries for now
+            await this.collectionService.updateOrder(newOrder);
+          } else {
+            await this.collectionService.updateOrder(newOrder);
+          }
           moved = true;
+        } else if (!isSameLocation) {
+          // Cross-folder move — relocate the YAML file
+          const fileName = relPath.split('/').pop() ?? relPath;
+          const newRelPath = targetFolderName ? `${targetFolderName}/${fileName}` : fileName;
+
+          if (newRelPath !== relPath) {
+            const request = await this.collectionService.loadRequest(relPath);
+            await this.collectionService.saveRequest(newRelPath, request);
+            await this.collectionService.deleteRequest(relPath);
+            moved = true;
+          }
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);

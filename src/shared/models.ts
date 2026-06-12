@@ -212,6 +212,11 @@ export interface HttpRequestDef {
     /** When false, 3xx redirects are NOT followed. Default: true */
     readonly followRedirects?: boolean;
   };
+  /**
+   * Optional human-readable notes/description for this request.
+   * Displayed in a collapsible "Notes" area in the RequestBuilder UI.
+   */
+  readonly description?: string;
   /** GUI-based assertion rules evaluated after every execution. */
   readonly assertions?: readonly AssertionRule[];
 }

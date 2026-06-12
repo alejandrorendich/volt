@@ -18,6 +18,7 @@ import { WebSocketPanel } from './components/WebSocketPanel';
 import { SsePanel } from './components/SsePanel';
 import { useMessage, postMessageToHost } from './hooks/useMessage';
 import { useSaveRequest } from './hooks/useSaveRequest';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useRequestStore } from './stores/request-store';
 import { useResponseStore } from './stores/response-store';
 import { useCollectionStore } from './stores/collection-store';
@@ -116,6 +117,7 @@ function useMessageRouter(): void {
               headers: loadedHeaders,
               body: msg.payload.body ?? { type: 'none' },
               queryParams: loadedParams,
+              description: msg.payload.description ?? '',
               preScript: msg.payload.preScript ?? '',
               postScript: msg.payload.postScript ?? '',
               sslVerify: msg.payload.settings?.sslVerify !== false,
@@ -255,6 +257,13 @@ export function App(): React.ReactElement {
 
   // Autosave + Ctrl+S
   useSaveRequest();
+
+  // Global keyboard shortcuts (Ctrl+Enter, Ctrl+L, Ctrl+D)
+  const handleGlobalSend = useCallback(() => {
+    const sendBtn = document.querySelector<HTMLButtonElement>('.rb-send');
+    sendBtn?.click();
+  }, []);
+  useKeyboardShortcuts(handleGlobalSend);
 
   // Track runner status to know whether to show the runner panel
   const runnerStatus = useRunnerStore((s) => s.status);

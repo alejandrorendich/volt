@@ -13,10 +13,12 @@
 import React, { useCallback, useEffect, useId, useRef, memo, useState } from 'react';
 import { useRequestStore } from '../stores/request-store';
 import type { RequestState } from '../stores/request-store';
+import type { HeaderRow } from '../stores/request-store';
 import { useResponseStore } from '../stores/response-store';
 import { useHistoryStore } from '../stores/history-store';
 import { useWsStore } from '../stores/ws-store';
 import { useSseStore } from '../stores/sse-store';
+import { useEnvStore } from '../stores/env-store';
 import { useMessage } from '../hooks/useMessage';
 import { KeyValueEditor } from './KeyValueEditor';
 import { AssertionsPanel } from './AssertionsPanel';
@@ -56,6 +58,60 @@ const BODY_TYPE_LABELS: Record<RequestBody['type'], string> = {
   binary: 'Binary',
   graphql: 'GraphQL',
 };
+
+// ---------------------------------------------------------------------------
+// HistorySparkline — SVG polyline of response times
+// ---------------------------------------------------------------------------
+
+interface HistorySparklineProps {
+  entries: HistoryEntry[];
+}
+
+function HistorySparkline({ entries }: HistorySparklineProps): React.ReactElement | null {
+  if (entries.length < 3) return null;
+
+  const times = entries.map((e) => e.time);
+  const min = Math.min(...times);
+  const max = Math.max(...times);
+  const range = max - min || 1; // Avoid division by zero
+
+  const W = 100; // viewBox width (percentage units)
+  const H = 30;  // viewBox height (px)
+  const PAD = 2; // Padding to keep polyline off edges
+
+  const points = times
+    .map((t, i) => {
+      const x = PAD + (i / (times.length - 1)) * (W - PAD * 2);
+      // Invert Y — low time = top (low Y), high time = bottom (high Y)
+      const y = PAD + ((max - t) / range) * (H - PAD * 2);
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
+
+  const avgTime = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+
+  return (
+    <div className="rb-history__sparkline" aria-label={`Response time trend — avg ${avgTime}ms`} title={`Response time trend (last ${entries.length} requests) — avg ${avgTime}ms`}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="rb-history__sparkline-svg"
+        aria-hidden="true"
+      >
+        <polyline
+          points={points}
+          fill="none"
+          stroke="var(--vscode-charts-green, #89d185)"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <span className="rb-history__sparkline-label">avg {avgTime}ms</span>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // HistoryPanel — execution history for saved requests
@@ -149,6 +205,7 @@ const HistoryPanel = memo(function HistoryPanel({ requestPath }: HistoryPanelPro
 
   return (
     <div className="rb-history">
+      <HistorySparkline entries={entries as HistoryEntry[]} />
       <div className="rb-history__list" role="list" aria-label="Request execution history">
         {(entries as HistoryEntry[]).map((entry, i) => (
           <div
@@ -305,6 +362,7 @@ function SaveButton(): React.ReactElement {
 function UrlInput(): React.ReactElement {
   const url = useRequestStore((s) => s.url);
   const setUrl = useRequestStore((s) => s.setUrl);
+  const envVariables = useEnvStore((s) => s.variables);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value),
@@ -318,15 +376,21 @@ function UrlInput(): React.ReactElement {
     <div className="rb-url-wrap">
       {/* Highlight overlay (decorative) */}
       <div className="rb-url-highlight" aria-hidden="true">
-        {parts.map((part, i) =>
-          part.startsWith('{{') && part.endsWith('}}') ? (
-            <mark key={i} className="rb-url-var">
-              {part}
-            </mark>
-          ) : (
-            <span key={i}>{part}</span>
-          ),
-        )}
+        {parts.map((part, i) => {
+          if (part.startsWith('{{') && part.endsWith('}}')) {
+            const varName = part.slice(2, -2).trim();
+            const resolved = envVariables[varName];
+            const tooltipText = resolved !== undefined
+              ? `${part} → ${resolved}`
+              : `${part} (not resolved)`;
+            return (
+              <mark key={i} className="rb-url-var" title={tooltipText}>
+                {part}
+              </mark>
+            );
+          }
+          return <span key={i}>{part}</span>;
+        })}
       </div>
 
       <input
@@ -587,8 +651,45 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
 });
 
 // ---------------------------------------------------------------------------
-// RequestBuilder
+// Notes area — collapsible description textarea
 // ---------------------------------------------------------------------------
+
+function NotesArea(): React.ReactElement {
+  const description = useRequestStore((s) => s.description);
+  const setDescription = useRequestStore((s) => s.setDescription);
+  const [expanded, setExpanded] = useState(false);
+
+  const hasContent = description.trim().length > 0;
+
+  return (
+    <div className="rb-notes">
+      <button
+        type="button"
+        className={`rb-notes__toggle${hasContent ? ' rb-notes__toggle--has-content' : ''}`}
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        aria-label="Toggle request notes"
+        title={expanded ? 'Collapse notes' : 'Expand notes'}
+      >
+        <span className="rb-notes__icon" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+        <span className="rb-notes__label">
+          Notes{hasContent ? ' •' : ''}
+        </span>
+      </button>
+      {expanded && (
+        <textarea
+          className="rb-notes__textarea"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Add notes about this request…"
+          rows={3}
+          spellCheck={false}
+          aria-label="Request notes"
+        />
+      )}
+    </div>
+  );
+}
 
 /** Short labels used in the Auth tab badge. */
 const AUTH_TYPE_BADGE_LABELS: Record<'bearer' | 'basic' | 'apikey' | 'oauth2' | 'aws', string> = {
@@ -619,6 +720,9 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const setTimeoutValue = useRequestStore((s) => s.setTimeout);
   const auth = useRequestStore((s) => s.auth);
 
+  // Environment variables for {{var}} tooltip resolution
+  const envVariables = useEnvStore((s) => s.variables);
+
   // History tab state — local to avoid touching store snapshot machinery
   const [activeLocalTab, setActiveLocalTab] = useState<'store' | 'history'>('store');
 
@@ -630,12 +734,35 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   const addHeader = useRequestStore((s) => s.addHeader);
   const updateHeader = useRequestStore((s) => s.updateHeader);
   const removeHeader = useRequestStore((s) => s.removeHeader);
+  const replaceHeaders = useRequestStore((s) => s.replaceHeaders);
 
   // Query params
   const queryParams = useRequestStore((s) => s.queryParams);
   const addParam = useRequestStore((s) => s.addParam);
   const updateParam = useRequestStore((s) => s.updateParam);
   const removeParam = useRequestStore((s) => s.removeParam);
+  const replaceParams = useRequestStore((s) => s.replaceParams);
+
+  // Bulk-replace adapters for KeyValueEditor (convert KVRow[] ↔ store types)
+  const handleBulkReplaceHeaders = useCallback(
+    (rows: import('./KeyValueEditor').KVRow[]) => {
+      const headerRows: HeaderRow[] = rows.map((r) => ({
+        id: r.id,
+        key: r.key,
+        value: r.value,
+        enabled: r.enabled,
+      }));
+      replaceHeaders(headerRows);
+    },
+    [replaceHeaders],
+  );
+
+  const handleBulkReplaceParams = useCallback(
+    (rows: import('./KeyValueEditor').KVRow[]) => {
+      replaceParams(rows.map((r) => ({ key: r.key, value: r.value, enabled: r.enabled })));
+    },
+    [replaceParams],
+  );
   const body = useRequestStore((s) => s.body);
   const preScript = useRequestStore((s) => s.preScript);
   const postScript = useRequestStore((s) => s.postScript);
@@ -832,7 +959,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           title={
             isWsMode
               ? (wsConnected ? 'Disconnect' : 'Connect')
-              : (loading ? 'Cancel (Esc)' : 'Send (Enter)')
+              : (loading ? 'Cancel (Esc)' : 'Send (Ctrl+Enter)')
           }
         >
           {isWsMode ? (
@@ -916,6 +1043,9 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           Receiving data… ({streamingPhase})
         </div>
       )}
+
+      {/* Notes area — collapsible */}
+      <NotesArea />
 
       {/* ---- Tabs row ---- */}
       <div className="rb-tabs" role="tablist" aria-label="Request options">
@@ -1028,6 +1158,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
             onAdd={addParam}
             onUpdate={handleParamUpdate}
             onRemove={handleParamRemove}
+            onBulkReplace={handleBulkReplaceParams}
             keyPlaceholder="Parameter"
             valuePlaceholder="Value"
           />
@@ -1045,9 +1176,11 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
             onAdd={addHeader}
             onUpdate={updateHeader}
             onRemove={removeHeader}
+            onBulkReplace={handleBulkReplaceHeaders}
             keyPlaceholder="Header"
             valuePlaceholder="Value"
             keySuggestions={COMMON_HEADERS}
+            envVariables={envVariables}
           />
         </div>
 

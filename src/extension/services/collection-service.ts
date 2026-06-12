@@ -672,6 +672,10 @@ function buildRequestYaml(req: HttpRequestDef): string {
     url: req.url,
   };
 
+  if (req.description) {
+    out['description'] = req.description;
+  }
+
   if (Object.keys(req.headers).length > 0) {
     out['headers'] = req.headers;
   }
@@ -793,6 +797,7 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
 
   const preScript = typeof raw.preScript === 'string' ? raw.preScript : undefined;
   const postScript = typeof raw.postScript === 'string' ? raw.postScript : undefined;
+  const description = typeof raw.description === 'string' ? raw.description : undefined;
 
   let settings: HttpRequestDef['settings'];
   if (raw.settings && typeof raw.settings === 'object') {
@@ -895,6 +900,7 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
   return {
     id, name, method, url, headers, queryParams,
     ...(body !== undefined ? { body } : {}),
+    ...(description ? { description } : {}),
     ...(preScript ? { preScript } : {}),
     ...(postScript ? { postScript } : {}),
     ...(settings !== undefined ? { settings } : {}),

@@ -69,6 +69,7 @@ export interface TabSnapshot {
   timeout: number | null;
   auth: AuthConfig;
   assertions: AssertionRule[];
+  description: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +111,8 @@ export interface RequestState {
   assertions: AssertionRule[];
   /** Results of the last assertion evaluation. Cleared on new request. */
   assertionResults: AssertionResult[];
+  /** Optional notes/description for this request. */
+  description: string;
   /** Whether a request is currently in-flight. */
   loading: boolean;
   /** CorrelationId of the active in-flight request (for cancel). */
@@ -146,16 +149,22 @@ export interface RequestActions {
   addHeader: () => void;
   updateHeader: (id: string, patch: Partial<Pick<HeaderRow, 'key' | 'value' | 'enabled'>>) => void;
   removeHeader: (id: string) => void;
+  /** Replace all headers at once (used by bulk-edit mode in KeyValueEditor). */
+  replaceHeaders: (rows: HeaderRow[]) => void;
 
   // Form-data rows (separate from HTTP headers — C-02)
   addFormRow: () => void;
   updateFormRow: (id: string, patch: Partial<Pick<FormDataRow, 'key' | 'value' | 'enabled'>>) => void;
   removeFormRow: (id: string) => void;
+  /** Replace all form-data rows at once (used by bulk-edit mode). */
+  replaceFormRows: (rows: FormDataRow[]) => void;
 
   // Query params
   addParam: () => void;
   updateParam: (index: number, patch: Partial<QueryParam>) => void;
   removeParam: (index: number) => void;
+  /** Replace all query params at once (used by bulk-edit mode). */
+  replaceParams: (params: QueryParam[]) => void;
 
   // Body
   setBody: (body: RequestBody) => void;
@@ -200,6 +209,9 @@ export interface RequestActions {
   updateAssertion: (id: string, patch: Partial<Omit<AssertionRule, 'id'>>) => void;
   removeAssertion: (id: string) => void;
   setAssertionResults: (results: AssertionResult[]) => void;
+
+  // Description / notes
+  setDescription: (description: string) => void;
 
   // Save
   /** Get the savePath for the current request. */
@@ -295,6 +307,7 @@ function captureSnapshot(s: RequestState): TabSnapshot {
     timeout: s.timeout,
     auth: s.auth,
     assertions: s.assertions,
+    description: s.description,
   };
 }
 
@@ -319,6 +332,7 @@ function applySnapshot(snapshot: TabSnapshot): Partial<RequestState> {
     timeout: snapshot.timeout,
     auth: snapshot.auth,
     assertions: snapshot.assertions,
+    description: snapshot.description,
   };
 }
 
@@ -353,6 +367,7 @@ const INITIAL_SNAPSHOT: TabSnapshot = {
   timeout: null,
   auth: { type: 'none' },
   assertions: [],
+  description: '',
 };
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
@@ -439,6 +454,13 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     get().markDirty();
   },
 
+  replaceHeaders: (rows) => {
+    // Always ensure a trailing empty row for user input
+    const withTrailer = [...rows, { id: generateId(), key: '', value: '', enabled: true }];
+    set({ headers: withTrailer });
+    get().markDirty();
+  },
+
   // Form-data row actions — independent from HTTP headers (C-02)
   addFormRow: () =>
     set((s) => ({
@@ -454,6 +476,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     set((s) => ({
       formDataRows: s.formDataRows.filter((r) => r.id !== id),
     })),
+
+  replaceFormRows: (rows) => {
+    const withTrailer = [...rows, { id: generateId(), key: '', value: '', enabled: true }];
+    set({ formDataRows: withTrailer });
+    get().markDirty();
+  },
 
   addParam: () => {
     set((s) => {
@@ -476,6 +504,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       const newParams = s.queryParams.filter((_, i) => i !== index);
       return { queryParams: newParams, url: buildUrl(s.baseUrl, newParams) };
     });
+    get().markDirty();
+  },
+
+  replaceParams: (params) => {
+    const withTrailer = [...params, { key: '', value: '', enabled: true }];
+    set((s) => ({ queryParams: withTrailer, url: buildUrl(s.baseUrl, withTrailer) }));
     get().markDirty();
   },
 
@@ -535,6 +569,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       headers: filteredHeaders,
       ...(body !== undefined ? { body } : {}),
       queryParams: s.queryParams.filter((p) => p.key.trim() !== ''),
+      ...(s.description ? { description: s.description } : {}),
       ...(s.preScript ? { preScript: s.preScript } : {}),
       ...(s.postScript ? { postScript: s.postScript } : {}),
       ...(s.auth.type !== 'none' ? { auth: s.auth } : {}),
@@ -578,6 +613,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       timeout: null,
       auth: { type: 'none' },
       assertions: [],
+      description: '',
     };
     set((s) => {
       // Save current tab's state before switching
@@ -671,6 +707,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         timeout: null,
         auth: { type: 'none' },
         assertions: [],
+        description: '',
       };
       updatedSnapshots.set(tabId, freshSnapshot);
       set({
@@ -745,6 +782,11 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
 
   setAssertionResults: (results) => set({ assertionResults: results }),
+
+  setDescription: (description) => {
+    set({ description });
+    get().markDirty();
+  },
 
   getSavePath: () => get().savePath,
   setSavePath: (path) => set({ savePath: path }),

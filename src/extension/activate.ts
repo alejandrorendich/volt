@@ -24,6 +24,7 @@ import { HistoryService } from './services/history-service';
 import { CookieService } from './services/cookie-service';
 import { importPostmanCollection } from './services/postman-import';
 import { buildCurlCommand } from './utils/curl';
+import { parseCurl } from './utils/curl-parser';
 import { UpdateService } from './services/update-service';
 
 // ---------------------------------------------------------------------------
@@ -678,6 +679,141 @@ export function activate(context: vscode.ExtensionContext): void {
         undefined as unknown as vscode.Webview,
       );
       vscode.window.showInformationMessage('Volt: Cookie jar cleared.');
+    }),
+  );
+
+  // volt.createCrudScaffold — create 5 standard REST requests for a resource
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.createCrudScaffold', async () => {
+      output.appendLine('[Volt] Command: volt.createCrudScaffold');
+
+      if (!collectionService) {
+        vscode.window.showWarningMessage('Volt: Open a folder to create requests.');
+        return;
+      }
+
+      const resourceName = await vscode.window.showInputBox({
+        prompt: 'Resource name (used as folder name)',
+        placeHolder: 'e.g. users, products, orders',
+        validateInput: (value) => {
+          if (!value || value.trim() === '') return 'Resource name is required';
+          if (/[/\\]/.test(value)) return 'Name cannot contain path separators';
+          return undefined;
+        },
+      });
+      if (!resourceName || resourceName.trim() === '') return;
+
+      const resource = resourceName.trim();
+
+      const baseUrlInput = await vscode.window.showInputBox({
+        prompt: 'Base URL for this resource',
+        placeHolder: `e.g. {{baseUrl}}/api/${resource}`,
+        value: `{{baseUrl}}/api/${resource}`,
+      });
+      if (baseUrlInput === undefined) return; // user cancelled
+
+      const baseUrl = baseUrlInput.trim() || `{{baseUrl}}/api/${resource}`;
+
+      const defaultHeaders = { 'Content-Type': 'application/json', 'Accept': '*/*' };
+
+      type ScaffoldEntry = {
+        name: string;
+        relPath: string;
+        method: import('../shared/models').HttpMethod;
+        url: string;
+        hasBody: boolean;
+      };
+
+      const scaffoldRequests: ScaffoldEntry[] = [
+        { name: `List ${resource}`,      relPath: `${resource}/list`,      method: 'GET',    url: baseUrl,          hasBody: false },
+        { name: `Get ${resource} by ID`, relPath: `${resource}/get-by-id`, method: 'GET',    url: `${baseUrl}/:id`, hasBody: false },
+        { name: `Create ${resource}`,    relPath: `${resource}/create`,    method: 'POST',   url: baseUrl,          hasBody: true  },
+        { name: `Update ${resource}`,    relPath: `${resource}/update`,    method: 'PUT',    url: `${baseUrl}/:id`, hasBody: true  },
+        { name: `Delete ${resource}`,    relPath: `${resource}/delete`,    method: 'DELETE', url: `${baseUrl}/:id`, hasBody: false },
+      ];
+
+      try {
+        // Create the folder first
+        await collectionService.createFolder(resource);
+
+        for (const entry of scaffoldRequests) {
+          const requestDef: import('../shared/models').HttpRequestDef = {
+            id: entry.relPath,
+            name: entry.name,
+            method: entry.method,
+            url: entry.url,
+            headers: defaultHeaders,
+            queryParams: [],
+            ...(entry.hasBody ? { body: { type: 'json' as const, content: '{\n  \n}' } } : {}),
+          };
+          await collectionService.saveRequest(entry.relPath, requestDef);
+        }
+
+        treeProvider.refresh();
+        vscode.window.showInformationMessage(
+          `Volt: Created CRUD scaffold for "${resource}" with 5 requests.`,
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[Volt] ERROR in createCrudScaffold: ${msg}`);
+        await vscode.window.showErrorMessage(`Volt: CRUD scaffold failed — ${msg}`);
+      }
+    }),
+  );
+
+  // volt.importCurl — read cURL from clipboard and create a new request
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.importCurl', async () => {
+      output.appendLine('[Volt] Command: volt.importCurl');
+
+      if (!collectionService) {
+        vscode.window.showWarningMessage('Volt: Open a folder to import requests.');
+        return;
+      }
+
+      const clipboardText = await vscode.env.clipboard.readText();
+      if (!clipboardText.trim()) {
+        await vscode.window.showErrorMessage('Volt: Clipboard is empty. Copy a cURL command first.');
+        return;
+      }
+
+      const parsed = parseCurl(clipboardText.trim());
+      if (!parsed) {
+        await vscode.window.showErrorMessage('Volt: Could not parse cURL from clipboard. Make sure you copied a valid cURL command.');
+        return;
+      }
+
+      // Find a unique request name
+      const baseName = 'curl-import';
+      let name = baseName;
+      let attempt = 1;
+      while (true) {
+        try {
+          await collectionService.loadRequest(name);
+          attempt++;
+          name = `${baseName}-${attempt}`;
+        } catch {
+          break;
+        }
+      }
+
+      try {
+        await collectionService.saveRequest(name, {
+          ...parsed,
+          id: name,
+          name: parsed.name ?? name,
+        });
+        treeProvider.refresh();
+        webviewProvider.openPanel();
+        setTimeout(() => router.pushRequest(name), 100);
+        await vscode.window.showInformationMessage(
+          `Volt: Imported "${parsed.method} ${parsed.url}" as "${name}".`,
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[Volt] ERROR in importCurl: ${msg}`);
+        await vscode.window.showErrorMessage(`Volt: Failed to save imported request — ${msg}`);
+      }
     }),
   );
 
