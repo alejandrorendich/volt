@@ -24,6 +24,7 @@ import { HistoryService } from './services/history-service';
 import { CookieService } from './services/cookie-service';
 import { importPostmanCollection } from './services/postman-import';
 import { buildCurlCommand } from './utils/curl';
+import { UpdateService } from './services/update-service';
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -749,6 +750,13 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   output.appendLine('[Volt] Activated successfully');
+
+  // 10. Update check — non-blocking, once per session (fire-and-forget)
+  const updateService = new UpdateService(
+    output,
+    String(context.extension.packageJSON['version'] ?? '0.0.0'),
+  );
+  void updateService.checkForUpdates();
 }
 
 // ---------------------------------------------------------------------------
