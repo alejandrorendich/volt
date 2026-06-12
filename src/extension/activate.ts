@@ -143,11 +143,19 @@ export function activate(context: vscode.ExtensionContext): void {
         webviewProvider.openPanel();
         return;
       }
-      const name = await vscode.window.showInputBox({
-        prompt: 'Request name',
-        placeHolder: 'e.g. get-users',
-      });
-      if (!name) return;
+      // Auto-generate a unique name
+      const baseName = 'new-request';
+      let name = baseName;
+      let attempt = 1;
+      while (true) {
+        try {
+          await collectionService.loadRequest(name);
+          attempt++;
+          name = `${baseName}-${attempt}`;
+        } catch {
+          break; // doesn't exist, use this name
+        }
+      }
       try {
         await collectionService.saveRequest(name, {
           id: name,
@@ -159,7 +167,6 @@ export function activate(context: vscode.ExtensionContext): void {
         });
         treeProvider.refresh();
         webviewProvider.openPanel();
-        // Small delay to ensure webview is ready before pushing the request
         setTimeout(() => router.pushRequest(name), 100);
       } catch (err: unknown) {
         output.appendLine(`[Volt] ERROR in newRequest: ${String(err)}`);
@@ -275,16 +282,26 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('volt.newRequestInFolder', async (item: unknown) => {
       output.appendLine('[Volt] Command: volt.newRequestInFolder');
+      if (!collectionService) return;
       const folderName = item && typeof item === 'object' && 'label' in item
         ? String((item as { label: unknown }).label)
         : '';
-      const name = await vscode.window.showInputBox({
-        prompt: 'Request name',
-        placeHolder: 'e.g. get-users',
-      });
-      if (!name) return;
-      if (!collectionService) return;
-      const relPath = folderName ? `${folderName}/${name}` : name;
+      // Auto-generate a unique name
+      const baseName = 'new-request';
+      let name = baseName;
+      let attempt = 1;
+      const relPathBase = folderName ? `${folderName}/${baseName}` : baseName;
+      let relPath = relPathBase;
+      while (true) {
+        try {
+          await collectionService.loadRequest(relPath);
+          attempt++;
+          name = `${baseName}-${attempt}`;
+          relPath = folderName ? `${folderName}/${name}` : name;
+        } catch {
+          break;
+        }
+      }
       await collectionService.saveRequest(relPath, {
         id: relPath,
         name,
@@ -302,12 +319,19 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('volt.newFolder', async () => {
       output.appendLine('[Volt] Command: volt.newFolder');
-      const name = await vscode.window.showInputBox({
-        prompt: 'Folder name',
-        placeHolder: 'e.g. auth',
-      });
-      if (!name) return;
       if (!collectionService) return;
+      // Auto-generate a unique folder name
+      const fs = await import('fs');
+      const path = await import('path');
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!workspaceRoot) return;
+      const baseName = 'new-folder';
+      let name = baseName;
+      let attempt = 1;
+      while (fs.existsSync(path.join(workspaceRoot, '.volt', 'requests', name))) {
+        attempt++;
+        name = `${baseName}-${attempt}`;
+      }
       await collectionService.createFolder(name);
       treeProvider.refresh();
     }),
