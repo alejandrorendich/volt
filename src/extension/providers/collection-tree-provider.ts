@@ -303,13 +303,15 @@ function requestToTreeItem(req: CollectionRequestItem): VoltTreeItem {
     {
       requestPath: req.path,
       method: req.method,
-      description: `  ${req.method}`,
       tooltip: `${req.method}  ${req.name}\n\nPath: ${req.path}`,
       contextValue: 'voltRequest',
     },
   );
 
-  // Method-coloured icon using VS Code ThemeColor (REQ-COL-001)
+  // Method badge as description (shows as faded text to the right of the name)
+  item.description = req.method;
+
+  // Colored circle icon to indicate method at a glance
   item.iconPath = methodThemeIcon(req.method);
 
   // Double-click to open in webview
@@ -323,21 +325,19 @@ function requestToTreeItem(req: CollectionRequestItem): VoltTreeItem {
 }
 
 /**
- * Map an HTTP method to a ThemeIcon with appropriate colour.
- * Uses a method-specific icon shape for better visual differentiation.
+ * Map an HTTP method to a colored circle ThemeIcon.
  */
 function methodThemeIcon(method: HttpMethod): vscode.ThemeIcon {
-  const iconMap: Record<HttpMethod, { icon: string; color: string }> = {
-    GET: { icon: 'arrow-down', color: 'charts.green' },
-    POST: { icon: 'arrow-up', color: 'charts.blue' },
-    PUT: { icon: 'arrow-swap', color: 'charts.yellow' },
-    PATCH: { icon: 'edit', color: 'charts.orange' },
-    DELETE: { icon: 'trash', color: 'charts.red' },
-    HEAD: { icon: 'eye', color: 'charts.purple' },
-    OPTIONS: { icon: 'settings-gear', color: 'foreground' },
+  const colorMap: Record<HttpMethod, string> = {
+    GET: 'charts.green',
+    POST: 'charts.blue',
+    PUT: 'charts.yellow',
+    PATCH: 'charts.orange',
+    DELETE: 'charts.red',
+    HEAD: 'charts.purple',
+    OPTIONS: 'foreground',
   };
-  const entry = iconMap[method] ?? { icon: 'circle-filled', color: 'foreground' };
-  return new vscode.ThemeIcon(entry.icon, new vscode.ThemeColor(entry.color));
+  return new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor(colorMap[method] ?? 'foreground'));
 }
 
 /**
