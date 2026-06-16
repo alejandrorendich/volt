@@ -54,7 +54,7 @@ export interface IHttpService {
  */
 export interface ICollectionService {
   loadTree(): Promise<import('../shared/models').CollectionTree>;
-  saveRequest(filePath: string, request: import('../shared/models').HttpRequestDef): Promise<void>;
+  saveRequest(filePath: string, request: import('../shared/models').HttpRequestDef): Promise<string>;
   getRequest(filePath: string): Promise<import('../shared/models').HttpRequestDef | null>;
   createFolder(relativeFolderPath: string): Promise<void>;
 }
@@ -585,12 +585,12 @@ export class MessageRouter implements vscode.Disposable {
 
     try {
       const requestWithName = { ...payload.request, name: payload.request.name ?? (savePath.split('/').pop() ?? savePath) };
-      await this.services.collection.saveRequest(savePath, requestWithName);
-      // Confirm save to webview with the resolved path
+      const resolvedPath = await this.services.collection.saveRequest(savePath, requestWithName);
+      // Confirm save to webview with the resolved path (may differ if method-disambiguated)
       this.sendToWebview({
         type: 'response:request-saved',
         correlationId,
-        payload: { path: savePath },
+        payload: { path: resolvedPath },
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

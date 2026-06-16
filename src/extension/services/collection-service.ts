@@ -187,9 +187,9 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * The path is relative to `.volt/requests/` (e.g., `"auth/login"`).
    * A `.yaml` extension is appended if absent.
    */
-  async saveRequest(relativeFilePath: string, request: HttpRequestDef): Promise<void> {
+  async saveRequest(relativeFilePath: string, request: HttpRequestDef): Promise<string> {
     const normalized = normalizeRelPath(relativeFilePath);
-    const absPath = path.join(this.workspaceRoot, REQUESTS_DIR, normalized + '.yaml');
+    let absPath = path.join(this.workspaceRoot, REQUESTS_DIR, normalized + '.yaml');
 
     // Validate before writing
     const result = validateRequestDef(request);
@@ -199,9 +199,21 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
       throw new Error(msg);
     }
 
+    // If file already exists with a different method, disambiguate with method suffix
+    let finalNormalized = normalized;
+    if (fs.existsSync(absPath)) {
+      const existingMethod = this.readMethodFromFile(absPath);
+      const newMethod = (request.method ?? 'GET').toUpperCase();
+      if (existingMethod && existingMethod !== newMethod) {
+        finalNormalized = `${normalized}-${newMethod.toLowerCase()}`;
+        absPath = path.join(this.workspaceRoot, REQUESTS_DIR, finalNormalized + '.yaml');
+      }
+    }
+
     await this.ensureDir(path.dirname(absPath));
     await this.atomicWrite(absPath, buildRequestYaml(request));
-    this.output.appendLine(`[CollectionService] Saved request: ${normalized}`);
+    this.output.appendLine(`[CollectionService] Saved request: ${finalNormalized}`);
+    return finalNormalized;
   }
 
   /**
@@ -257,15 +269,27 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    */
   async renameRequest(oldPath: string, newPath: string): Promise<void> {
     const oldNorm = normalizeRelPath(oldPath);
-    const newNorm = normalizeRelPath(newPath);
+    let newNorm = normalizeRelPath(newPath);
     const oldAbs = path.join(this.workspaceRoot, REQUESTS_DIR, oldNorm + '.yaml');
-    const newAbs = path.join(this.workspaceRoot, REQUESTS_DIR, newNorm + '.yaml');
+    let newAbs = path.join(this.workspaceRoot, REQUESTS_DIR, newNorm + '.yaml');
 
     if (!fs.existsSync(oldAbs)) {
       throw new Error(`Request file not found: ${oldAbs}`);
     }
-    if (fs.existsSync(newAbs)) {
-      throw new Error(`A request named "${newNorm}" already exists.`);
+    if (fs.existsSync(newAbs) && oldAbs !== newAbs) {
+      // Allow same name if methods differ — disambiguate with method suffix
+      const existingMethod = this.readMethodFromFile(newAbs);
+      const sourceMethod = this.readMethodFromFile(oldAbs);
+      if (existingMethod && sourceMethod && existingMethod !== sourceMethod) {
+        // Append method suffix to disambiguate on disk
+        newNorm = `${newNorm}-${sourceMethod.toLowerCase()}`;
+        newAbs = path.join(this.workspaceRoot, REQUESTS_DIR, newNorm + '.yaml');
+        if (fs.existsSync(newAbs)) {
+          throw new Error(`A request named "${newNorm}" already exists.`);
+        }
+      } else {
+        throw new Error(`A request named "${newNorm}" already exists with the same method.`);
+      }
     }
 
     // Update the `name` field inside the YAML before renaming the file
@@ -518,6 +542,22 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Read the HTTP method from a request YAML file without fully parsing it.
+   * Returns the method string (e.g. 'GET', 'POST') or undefined on failure.
+   */
+  private readMethodFromFile(absPath: string): string | undefined {
+    try {
+      const raw = yaml.load(fs.readFileSync(absPath, 'utf8')) as Record<string, unknown> | null;
+      if (raw && typeof raw === 'object' && typeof raw['method'] === 'string') {
+        return raw['method'].toUpperCase();
+      }
+    } catch {
+      // Non-fatal
+    }
+    return undefined;
+  }
 
   private async ensureDir(absDir: string): Promise<void> {
     fs.mkdirSync(absDir, { recursive: true });
