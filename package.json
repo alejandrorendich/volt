@@ -34,6 +34,7 @@
     "onCommand:volt.duplicateFolder",
     "onCommand:volt.importPostman",
     "onCommand:volt.renameRequest",
+    "onCommand:volt.renameFolder",
     "onCommand:volt.copyAsCurl",
     "onCommand:volt.runCollection",
     "onCommand:volt.clearCookies",
@@ -150,6 +151,12 @@
       {
         "command": "volt.renameRequest",
         "title": "Rename Request",
+        "category": "Volt",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "volt.renameFolder",
+        "title": "Rename Folder",
         "category": "Volt",
         "icon": "$(edit)"
       },
@@ -289,6 +296,11 @@
           "group": "edit@1"
         },
         {
+          "command": "volt.renameFolder",
+          "when": "view == volt.collectionTree && viewItem == voltFolder",
+          "group": "edit@2"
+        },
+        {
           "command": "volt.exportFolder",
           "when": "view == volt.collectionTree && viewItem == voltFolder",
           "group": "export@1"
@@ -349,7 +361,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.extension.json && tsc --noEmit -p tsconfig.webview.json",
+    "typecheck": "tsc --noEmit -p src/extension/tsconfig.json && tsc --noEmit -p src/webview/tsconfig.json",
     "clean": "rimraf dist"
   },
   "dependencies": {

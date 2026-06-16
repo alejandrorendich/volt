@@ -588,6 +588,38 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // volt.renameFolder — rename a folder from the tree context menu
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.renameFolder', async (item: unknown) => {
+      output.appendLine('[Volt] Command: volt.renameFolder');
+      if (!collectionService) return;
+      if (!item || typeof item !== 'object' || !('label' in item)) return;
+      const currentName = String((item as { label: unknown }).label);
+
+      const newName = await vscode.window.showInputBox({
+        prompt: 'New folder name',
+        value: currentName,
+        valueSelection: [0, currentName.length],
+        validateInput: (value) => {
+          if (!value || value.trim() === '') return 'Name cannot be empty';
+          if (/[/\\]/.test(value)) return 'Name cannot contain path separators';
+          return undefined;
+        },
+      });
+
+      if (!newName || newName.trim() === '' || newName.trim() === currentName) return;
+
+      try {
+        await collectionService.renameFolder(currentName, newName.trim());
+        treeProvider.refresh();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[Volt] ERROR in renameFolder: ${msg}`);
+        await vscode.window.showErrorMessage(`Volt: ${msg}`);
+      }
+    }),
+  );
+
   // volt.copyAsCurl — build a cURL command from a saved request and copy to clipboard
   context.subscriptions.push(
     vscode.commands.registerCommand('volt.copyAsCurl', async (item: unknown) => {
