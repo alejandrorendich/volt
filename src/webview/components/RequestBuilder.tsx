@@ -11,6 +11,8 @@
  */
 
 import React, { useCallback, useEffect, useId, useRef, memo, useState } from 'react';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { useRequestStore } from '../stores/request-store';
 import type { RequestState } from '../stores/request-store';
 import type { HeaderRow } from '../stores/request-store';
@@ -651,42 +653,136 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
 });
 
 // ---------------------------------------------------------------------------
-// Notes area — collapsible description textarea
+// Notes panel — Markdown editor + preview (with relative-time helper)
 // ---------------------------------------------------------------------------
 
-function NotesArea(): React.ReactElement {
-  const description = useRequestStore((s) => s.description);
-  const setDescription = useRequestStore((s) => s.setDescription);
-  const [expanded, setExpanded] = useState(false);
+/**
+ * Format an ISO timestamp string as a short human-readable relative phrase.
+ *
+ * Returns "" for empty input or unparseable strings so the caller can hide
+ * the "Last edited" indicator when the timestamp is missing or malformed.
+ *
+ * Buckets:
+ *   - < 60s             → "just now"
+ *   - < 60min           → "{N} minute(s) ago" (0 → "just now" as above)
+ *   - < 24h             → "{N} hour(s) ago"
+ *   - < 30d             → "{N} day(s) ago"
+ *   - otherwise         → formatted local date (e.g. "Jan 15, 2026")
+ */
+function formatRelativeTime(iso: string): string {
+  if (!iso) return '';
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return '';
 
-  const hasContent = description.trim().length > 0;
+  const now = Date.now();
+  const diffMs = now - then.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+
+  if (diffSec < 60) return 'just now';
+
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) {
+    return `${diffMin} ${diffMin === 1 ? 'minute' : 'minutes'} ago`;
+  }
+
+  const diffHour = Math.round(diffMin / 60);
+  if (diffHour < 24) {
+    return `${diffHour} ${diffHour === 1 ? 'hour' : 'hours'} ago`;
+  }
+
+  const diffDay = Math.round(diffHour / 24);
+  if (diffDay < 30) {
+    return `${diffDay} ${diffDay === 1 ? 'day' : 'days'} ago`;
+  }
+
+  return new Intl.DateTimeFormat('en', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(then);
+}
+
+/**
+ * Notes panel — Markdown editor + sanitized preview for the Notes tab.
+ *
+ * Renders inside the "Notes" tab body. Owns its own edit/preview mode in
+ * local state (not in the store); persists content + `notesUpdatedAt`
+ * timestamp via `setNotes` so the rest of the app sees a single source of
+ * truth.
+ */
+function NotesPanel(): React.ReactElement {
+  const notes = useRequestStore((s) => s.notes);
+  const notesUpdatedAt = useRequestStore((s) => s.notesUpdatedAt);
+  const setNotes = useRequestStore((s) => s.setNotes);
+
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize the textarea to fit its content as the user types.
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, [notes]);
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setNotes({ notes: e.target.value, notesUpdatedAt: new Date().toISOString() });
+    },
+    [setNotes],
+  );
+
+  // Preview pipeline — parsed Markdown → sanitized HTML.
+  const safeHtml =
+    mode === 'preview' && notes.trim()
+      ? DOMPurify.sanitize(marked.parse(notes, { gfm: true, breaks: true, async: false }))
+      : '';
+
+  const relativeTime = formatRelativeTime(notesUpdatedAt);
 
   return (
-    <div className="rb-notes">
-      <button
-        type="button"
-        className={`rb-notes__toggle${hasContent ? ' rb-notes__toggle--has-content' : ''}`}
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        aria-label="Toggle request notes"
-        title={expanded ? 'Collapse notes' : 'Expand notes'}
-      >
-        <span className="rb-notes__icon" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        <span className="rb-notes__label">
-          Notes{hasContent ? ' •' : ''}
-        </span>
-      </button>
-      {expanded && (
-        <textarea
-          className="rb-notes__textarea"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Add notes about this request…"
-          rows={3}
-          spellCheck={false}
-          aria-label="Request notes"
-        />
-      )}
+    <div className="notes-panel">
+      <div className="notes-toolbar">
+        <button
+          type="button"
+          className={`notes-mode-btn${mode === 'edit' ? ' active' : ''}`}
+          onClick={() => setMode('edit')}
+          aria-pressed={mode === 'edit'}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          className={`notes-mode-btn${mode === 'preview' ? ' active' : ''}`}
+          onClick={() => setMode('preview')}
+          aria-pressed={mode === 'preview'}
+        >
+          Preview
+        </button>
+        {relativeTime && (
+          <span className="notes-timestamp" aria-live="polite">
+            Last edited {relativeTime}
+          </span>
+        )}
+      </div>
+      <div className="notes-body">
+        {mode === 'edit' ? (
+          <textarea
+            ref={taRef}
+            className="notes-editor"
+            value={notes}
+            onChange={handleChange}
+            placeholder="Add notes about this request… (Markdown supported)"
+            spellCheck={false}
+            aria-label="Request notes"
+          />
+        ) : safeHtml ? (
+          <div className="notes-preview" dangerouslySetInnerHTML={{ __html: safeHtml }} />
+        ) : (
+          <div className="notes-preview-empty">Nothing to preview</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1044,9 +1140,6 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
         </div>
       )}
 
-      {/* Notes area — collapsible */}
-      <NotesArea />
-
       {/* ---- Tabs row ---- */}
       <div className="rb-tabs" role="tablist" aria-label="Request options">
         <button
@@ -1128,6 +1221,16 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
               {authBadgeLabel}
             </span>
           )}
+        </button>
+        <button
+          role="tab"
+          type="button"
+          className={`rb-tab${isStoreTabActive('notes') ? ' rb-tab--active' : ''}`}
+          onClick={() => handleStoreTabClick('notes')}
+          aria-selected={isStoreTabActive('notes')}
+          aria-controls="rb-panel-notes"
+        >
+          Notes
         </button>
         {savePath !== null && (
           <button
@@ -1222,6 +1325,16 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
           className="rb-panel"
         >
           <AuthPanel />
+        </div>
+
+        <div
+          id="rb-panel-notes"
+          role="tabpanel"
+          aria-label="Request notes"
+          hidden={!isStoreTabActive('notes')}
+          className="rb-panel rb-panel--notes"
+        >
+          <NotesPanel />
         </div>
 
         {savePath !== null && (

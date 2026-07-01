@@ -63,6 +63,9 @@ interface RawRequestYaml {
   body?: unknown;
   queryParams?: unknown;
   variables?: unknown;
+  notes?: unknown;
+  notesUpdatedAt?: unknown;
+  // Legacy field — kept for backward-compatible reads of existing YAML files.
   description?: unknown;
   preScript?: unknown;
   postScript?: unknown;
@@ -726,8 +729,11 @@ function buildRequestYaml(req: HttpRequestDef): string {
     url: req.url,
   };
 
-  if (req.description) {
-    out['description'] = req.description;
+  if (req.notes) {
+    out['notes'] = req.notes;
+  }
+  if (req.notesUpdatedAt) {
+    out['notesUpdatedAt'] = req.notesUpdatedAt;
   }
 
   if (Object.keys(req.headers).length > 0) {
@@ -851,7 +857,13 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
 
   const preScript = typeof raw.preScript === 'string' ? raw.preScript : undefined;
   const postScript = typeof raw.postScript === 'string' ? raw.postScript : undefined;
-  const description = typeof raw.description === 'string' ? raw.description : undefined;
+  // Backward compat: prefer `notes`, fall back to legacy `description`.
+  const notes = typeof raw.notes === 'string'
+    ? raw.notes
+    : typeof raw.description === 'string'
+      ? raw.description
+      : undefined;
+  const notesUpdatedAt = typeof raw.notesUpdatedAt === 'string' ? raw.notesUpdatedAt : undefined;
 
   let settings: HttpRequestDef['settings'];
   if (raw.settings && typeof raw.settings === 'object') {
@@ -954,7 +966,8 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
   return {
     id, name, method, url, headers, queryParams,
     ...(body !== undefined ? { body } : {}),
-    ...(description ? { description } : {}),
+    ...(notes ? { notes } : {}),
+    ...(notesUpdatedAt ? { notesUpdatedAt } : {}),
     ...(preScript ? { preScript } : {}),
     ...(postScript ? { postScript } : {}),
     ...(settings !== undefined ? { settings } : {}),

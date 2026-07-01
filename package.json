@@ -2,7 +2,7 @@
   "name": "volt",
   "displayName": "Volt",
   "description": "Fast, free HTTP client for VS Code",
-  "version": "0.5.3",
+  "version": "0.7.0",
   "publisher": "volt-dev",
   "license": "MIT",
   "private": true,
@@ -365,9 +365,11 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "undici": "^6.19.2",
-    "js-yaml": "^4.1.0",
     "ajv": "^8.17.1",
+    "dompurify": "^3.4.11",
+    "js-yaml": "^4.1.0",
+    "marked": "^18.0.5",
+    "undici": "^6.19.2",
     "zustand": "^4.5.4"
   },
   "devDependencies": {

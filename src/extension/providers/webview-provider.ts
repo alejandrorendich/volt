@@ -173,7 +173,7 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
       `style-src ${webview.cspSource}`,
       `script-src 'nonce-${nonce}'`,
       `font-src ${webview.cspSource}`,
-      `img-src ${webview.cspSource} data:`,
+      `img-src ${webview.cspSource} data: https:`,
     ].join('; ');
 
     return /* html */ `<!DOCTYPE html>

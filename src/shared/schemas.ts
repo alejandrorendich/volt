@@ -37,6 +37,15 @@ const requestYamlSchema = {
   properties: {
     id: { type: 'string' },
     name: { type: 'string' },
+    notes: {
+      type: 'string',
+      description: 'Optional human-readable notes for this request. Supports Markdown (GFM).',
+    },
+    notesUpdatedAt: {
+      type: 'string',
+      format: 'date-time',
+      description: 'ISO 8601 timestamp of the last notes edit',
+    },
     method: {
       type: 'string',
       enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],

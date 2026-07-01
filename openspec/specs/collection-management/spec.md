@@ -42,7 +42,7 @@ The system MUST support: create request, create folder, rename, duplicate, delet
 
 ### Requirement: REQ-COL-003 — YAML Schema
 
-Each request MUST be stored as a YAML file conforming to a defined schema. Required fields: `method`, `url`. Optional: `headers`, `body`, `params`, `description`, `variables`.
+Each request MUST be stored as a YAML file conforming to a defined schema. Required fields: `method`, `url`. Optional: `headers`, `body`, `params`, `notes`, `notesUpdatedAt`, `variables`.
 
 #### Scenario: Valid request file
 

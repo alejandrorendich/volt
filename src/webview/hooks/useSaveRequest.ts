@@ -52,7 +52,9 @@ export function useSaveRequest(): { saveNow: () => void } {
         state.body === prev.body &&
         state.queryParams === prev.queryParams &&
         state.preScript === prev.preScript &&
-        state.postScript === prev.postScript
+        state.postScript === prev.postScript &&
+        state.notes === prev.notes &&
+        state.notesUpdatedAt === prev.notesUpdatedAt
       ) {
         return;
       }

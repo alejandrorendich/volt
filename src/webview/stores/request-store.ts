@@ -63,13 +63,14 @@ export interface TabSnapshot {
   queryParams: QueryParam[];
   preScript: string;
   postScript: string;
-  activeTab: 'params' | 'headers' | 'body' | 'scripts' | 'auth' | 'tests';
+  activeTab: 'params' | 'headers' | 'body' | 'scripts' | 'auth' | 'tests' | 'notes';
   sslVerify: boolean;
   followRedirects: boolean;
   timeout: number | null;
   auth: AuthConfig;
   assertions: AssertionRule[];
-  description: string;
+  notes: string;
+  notesUpdatedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +99,7 @@ export interface RequestState {
   /** Post-request script (JavaScript). */
   postScript: string;
   /** Active sub-tab in the builder panels. */
-  activeTab: 'params' | 'headers' | 'body' | 'scripts' | 'auth' | 'tests';
+  activeTab: 'params' | 'headers' | 'body' | 'scripts' | 'auth' | 'tests' | 'notes';
   /** Whether TLS certificate verification is enabled. Default: true */
   sslVerify: boolean;
   /** Whether to follow 3xx redirects. Default: true */
@@ -111,8 +112,10 @@ export interface RequestState {
   assertions: AssertionRule[];
   /** Results of the last assertion evaluation. Cleared on new request. */
   assertionResults: AssertionResult[];
-  /** Optional notes/description for this request. */
-  description: string;
+  /** Notes for this request (Markdown supported). */
+  notes: string;
+  /** ISO timestamp of the last notes update. Empty string when unknown. */
+  notesUpdatedAt: string;
   /** Whether a request is currently in-flight. */
   loading: boolean;
   /** CorrelationId of the active in-flight request (for cancel). */
@@ -210,8 +213,8 @@ export interface RequestActions {
   removeAssertion: (id: string) => void;
   setAssertionResults: (results: AssertionResult[]) => void;
 
-  // Description / notes
-  setDescription: (description: string) => void;
+  // Notes
+  setNotes: (payload: { notes: string; notesUpdatedAt: string }) => void;
 
   // Save
   /** Get the savePath for the current request. */
@@ -307,7 +310,8 @@ function captureSnapshot(s: RequestState): TabSnapshot {
     timeout: s.timeout,
     auth: s.auth,
     assertions: s.assertions,
-    description: s.description,
+    notes: s.notes,
+    notesUpdatedAt: s.notesUpdatedAt,
   };
 }
 
@@ -332,7 +336,8 @@ function applySnapshot(snapshot: TabSnapshot): Partial<RequestState> {
     timeout: snapshot.timeout,
     auth: snapshot.auth,
     assertions: snapshot.assertions,
-    description: snapshot.description,
+    notes: snapshot.notes,
+    notesUpdatedAt: snapshot.notesUpdatedAt,
   };
 }
 
@@ -367,7 +372,8 @@ const INITIAL_SNAPSHOT: TabSnapshot = {
   timeout: null,
   auth: { type: 'none' },
   assertions: [],
-  description: '',
+  notes: '',
+  notesUpdatedAt: '',
 };
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
@@ -569,7 +575,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       headers: filteredHeaders,
       ...(body !== undefined ? { body } : {}),
       queryParams: s.queryParams.filter((p) => p.key.trim() !== ''),
-      ...(s.description ? { description: s.description } : {}),
+      ...(s.notes ? { notes: s.notes } : {}),
+      ...(s.notesUpdatedAt ? { notesUpdatedAt: s.notesUpdatedAt } : {}),
       ...(s.preScript ? { preScript: s.preScript } : {}),
       ...(s.postScript ? { postScript: s.postScript } : {}),
       ...(s.auth.type !== 'none' ? { auth: s.auth } : {}),
@@ -613,7 +620,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       timeout: null,
       auth: { type: 'none' },
       assertions: [],
-      description: '',
+      notes: '',
+      notesUpdatedAt: '',
     };
     set((s) => {
       // Save current tab's state before switching
@@ -707,7 +715,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         timeout: null,
         auth: { type: 'none' },
         assertions: [],
-        description: '',
+        notes: '',
+        notesUpdatedAt: '',
       };
       updatedSnapshots.set(tabId, freshSnapshot);
       set({
@@ -783,8 +792,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
   setAssertionResults: (results) => set({ assertionResults: results }),
 
-  setDescription: (description) => {
-    set({ description });
+  setNotes: (payload) => {
+    set({ notes: payload.notes, notesUpdatedAt: payload.notesUpdatedAt });
     get().markDirty();
   },
 

@@ -879,64 +879,281 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Notes area (collapsible description)
+ * Notes panel (Volt Notes feature)
  * --------------------------------------------------------------------------- */
-.rb-notes {
+
+/* Outer container — fills the tab panel slot */
+.notes-panel {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--volt-bg-surface);
+}
+
+/* Toolbar — mode toggle + relative timestamp */
+.notes-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--volt-space-2);
+  padding: var(--volt-space-2) var(--volt-space-5);
   border-bottom: 1px solid var(--volt-border);
   flex-shrink: 0;
 }
 
-.rb-notes__toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--volt-space-2);
+/* Mode toggle button base */
+.notes-mode-btn {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: var(--volt-fg-secondary);
   font-family: var(--volt-font-family);
   font-size: var(--volt-font-size-sm);
-  padding: var(--volt-space-1) var(--volt-space-5);
+  font-weight: 500;
+  padding: var(--volt-space-1) var(--volt-space-4);
+  border-radius: var(--volt-radius-sm);
   cursor: pointer;
-  text-align: left;
-  transition: color 0.1s;
-  height: 22px;
+  transition: all 0.1s;
 }
 
-.rb-notes__toggle:hover {
+.notes-mode-btn:hover {
   color: var(--volt-fg-primary);
+  background: var(--volt-bg-hover);
 }
 
-.rb-notes__toggle--has-content {
-  color: var(--volt-fg-primary);
+.notes-mode-btn.active {
+  color: var(--volt-tab-active-fg);
+  background: var(--volt-bg-elevated);
+  border-color: var(--volt-border-input);
 }
 
-.rb-notes__icon {
-  font-size: 9px;
-  flex-shrink: 0;
-  width: 10px;
-  text-align: center;
+.notes-mode-btn:focus-visible {
+  outline: none;
+  border-color: var(--volt-border-focus);
 }
 
-.rb-notes__label {
+/* Relative timestamp, right-aligned in the toolbar */
+.notes-timestamp {
+  margin-left: auto;
   font-size: var(--volt-font-size-sm);
+  color: var(--vscode-descriptionForeground, var(--volt-fg-secondary));
+  white-space: nowrap;
+  font-family: var(--volt-font-family);
 }
 
-.rb-notes__textarea {
-  resize: none;
+/* Body — wraps editor or preview, owns the scroll */
+.notes-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+/* Editor textarea */
+.notes-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 150px;
   background: var(--volt-input-bg);
   color: var(--volt-input-fg);
   border: none;
-  border-top: 1px solid var(--volt-border);
-  font-family: var(--volt-font-family);
+  border-radius: 0;
+  padding: var(--volt-space-4) var(--volt-space-5);
+  font-family: var(--volt-font-mono);
   font-size: var(--volt-font-size-sm);
-  line-height: 1.5;
-  padding: var(--volt-space-3) var(--volt-space-5);
+  line-height: 1.6;
   outline: none;
-  width: 100%;
+  resize: none;
+  tab-size: 2;
 }
 
-.rb-notes__textarea:focus {
+.notes-editor:focus {
   background: var(--volt-input-bg);
+}
+
+.notes-editor::placeholder {
+  color: var(--volt-input-placeholder);
+}
+
+/* Preview (sanitized Markdown HTML) */
+.notes-preview {
+  flex: 1;
+  padding: var(--volt-space-4) var(--volt-space-5);
+  color: var(--volt-fg-primary);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size);
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.notes-preview-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--volt-space-6);
+  color: var(--vscode-descriptionForeground, var(--volt-fg-secondary));
+  font-size: var(--volt-font-size-sm);
+  font-style: italic;
+}
+
+/* Prose styles for sanitized Markdown output */
+.notes-preview h1,
+.notes-preview h2,
+.notes-preview h3,
+.notes-preview h4,
+.notes-preview h5,
+.notes-preview h6 {
+  margin: var(--volt-space-5) 0 var(--volt-space-3);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--volt-fg-primary);
+}
+
+.notes-preview h1 {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--volt-border);
+  padding-bottom: var(--volt-space-2);
+}
+
+.notes-preview h2 {
+  font-size: 1.3em;
+}
+
+.notes-preview h3 {
+  font-size: 1.15em;
+}
+
+.notes-preview h4 {
+  font-size: 1em;
+}
+
+.notes-preview h5 {
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.notes-preview h6 {
+  font-size: 0.85em;
+  color: var(--volt-fg-secondary);
+}
+
+.notes-preview h1:first-child,
+.notes-preview h2:first-child,
+.notes-preview h3:first-child,
+.notes-preview h4:first-child,
+.notes-preview h5:first-child,
+.notes-preview h6:first-child {
+  margin-top: 0;
+}
+
+.notes-preview p {
+  margin: 0 0 var(--volt-space-3);
+}
+
+.notes-preview a {
+  color: var(--vscode-textLink-foreground, #58a6ff);
+  text-decoration: none;
+}
+
+.notes-preview a:hover {
+  text-decoration: underline;
+}
+
+.notes-preview strong {
+  font-weight: 600;
+}
+
+.notes-preview em {
+  font-style: italic;
+}
+
+.notes-preview code {
+  font-family: var(--volt-font-mono);
+  font-size: 0.9em;
+  background: var(--volt-bg-elevated);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--volt-fg-primary);
+}
+
+.notes-preview pre {
+  margin: 0 0 var(--volt-space-3);
+  padding: var(--volt-space-4);
+  background: var(--volt-bg-elevated);
+  border-radius: var(--volt-radius-md);
+  overflow: auto;
+  line-height: 1.5;
+}
+
+.notes-preview pre code {
+  background: transparent;
+  padding: 0;
+  font-size: var(--volt-font-size-sm);
+  color: var(--volt-fg-primary);
+}
+
+.notes-preview ul,
+.notes-preview ol {
+  margin: 0 0 var(--volt-space-3);
+  padding-left: var(--volt-space-6);
+}
+
+.notes-preview li {
+  margin-bottom: var(--volt-space-1);
+}
+
+.notes-preview li > p {
+  margin-bottom: var(--volt-space-1);
+}
+
+.notes-preview blockquote {
+  margin: 0 0 var(--volt-space-3);
+  padding: var(--volt-space-2) var(--volt-space-4);
+  border-left: 3px solid var(--volt-border-input);
+  color: var(--vscode-descriptionForeground, var(--volt-fg-secondary));
+  background: var(--volt-bg-elevated);
+  border-radius: 0 var(--volt-radius-sm) var(--volt-radius-sm) 0;
+}
+
+.notes-preview blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.notes-preview table {
+  border-collapse: collapse;
+  margin: 0 0 var(--volt-space-3);
+  width: 100%;
+  font-size: var(--volt-font-size-sm);
+}
+
+.notes-preview th,
+.notes-preview td {
+  border: 1px solid var(--volt-border);
+  padding: var(--volt-space-2) var(--volt-space-3);
+  text-align: left;
+  vertical-align: top;
+}
+
+.notes-preview th {
+  background: var(--volt-bg-elevated);
+  font-weight: 600;
+}
+
+.notes-preview hr {
+  border: none;
+  border-top: 1px solid var(--volt-border);
+  margin: var(--volt-space-5) 0;
+}
+
+.notes-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--volt-radius-sm);
+}
+
+.notes-preview del {
+  color: var(--vscode-descriptionForeground, var(--volt-fg-secondary));
 }

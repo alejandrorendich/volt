@@ -213,10 +213,17 @@ export interface HttpRequestDef {
     readonly followRedirects?: boolean;
   };
   /**
-   * Optional human-readable notes/description for this request.
-   * Displayed in a collapsible "Notes" area in the RequestBuilder UI.
+   * Optional human-readable notes for this request.
+   * Displayed in the dedicated "Notes" tab in the RequestBuilder UI.
+   * Supports Markdown (GFM) for rendering.
    */
-  readonly description?: string;
+  readonly notes?: string;
+
+  /**
+   * Optional ISO 8601 timestamp of the last notes edit.
+   * Read-only on the host; updated by the webview when the user changes notes.
+   */
+  readonly notesUpdatedAt?: string;
   /** GUI-based assertion rules evaluated after every execution. */
   readonly assertions?: readonly AssertionRule[];
 }
