@@ -5,6 +5,18 @@
   "version": "0.8.0",
   "publisher": "volt-dev",
   "license": "MIT",
+  "author": {
+    "name": "Alejandro Rendich",
+    "email": "alejandro.comas@gmail.com"
+  },
+  "homepage": "https://github.com/alejandrorendich/volt#readme",
+  "bugs": {
+    "url": "https://github.com/alejandrorendich/volt/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alejandrorendich/volt.git"
+  },
   "private": true,
   "engines": {
     "vscode": "^1.86.0"
