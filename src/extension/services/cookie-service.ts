@@ -15,7 +15,7 @@
  *   is not a browser).
  */
 
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 
 // ---------------------------------------------------------------------------
 // Cookie struct

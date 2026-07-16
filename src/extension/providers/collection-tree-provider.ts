@@ -31,6 +31,7 @@ import type { CollectionService } from '../services/collection-service';
 import type {
   CollectionTreeNode,
   CollectionFolderItem,
+  CollectionOrderEntry,
   CollectionRequestItem,
   HttpMethod,
 } from '../../shared/models';
@@ -142,7 +143,7 @@ export class CollectionTreeProvider
 
   async getChildren(element?: VoltTreeItem): Promise<VoltTreeItem[]> {
     if (!this.collectionService) {
-      return [makePlaceholder('No collection service — run "Volt: Initialize Collection"')];
+      return [makePlaceholder('Open a folder to use Volt')];
     }
 
     try {
@@ -222,7 +223,7 @@ export class CollectionTreeProvider
         if (isSameLocation && target?.kind === 'request') {
           // Same folder drop onto a request — reorder in collection.yaml
           const tree = await this.collectionService.loadTree();
-          const siblings: import('../../shared/models').CollectionTreeNode[] = targetFolderName
+          const siblings: CollectionTreeNode[] = targetFolderName
             ? (() => {
                 const folder = findFolderByName(tree.nodes, targetFolderName);
                 return folder ? [...folder.children] : [];
@@ -233,7 +234,7 @@ export class CollectionTreeProvider
           const targetRelPath = target.requestPath ?? '';
           const draggedRelPath = relPath;
 
-          const newOrder: import('../../shared/models').CollectionOrderEntry[] = [];
+          const newOrder: CollectionOrderEntry[] = [];
           for (const node of siblings) {
             const nodeRelPath = node.kind === 'request' ? node.path : node.name;
             const isFolder = node.kind === 'folder';
@@ -304,7 +305,9 @@ export class CollectionTreeProvider
   // ---------------------------------------------------------------------------
 
   dispose(): void {
-    this.disposables.forEach((d) => d.dispose());
+    this.disposables.forEach((d) => {
+      d.dispose();
+    });
     this.disposables.length = 0;
   }
 }

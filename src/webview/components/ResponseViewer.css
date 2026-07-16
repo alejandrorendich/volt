@@ -474,6 +474,37 @@
   flex-shrink: 0;
 }
 
+.rv-search__btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--volt-fg-secondary);
+  font-family: var(--volt-font-family);
+  font-size: var(--volt-font-size-sm);
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--volt-radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  min-width: 24px;
+}
+
+.rv-search__btn:hover:not(:disabled) {
+  background: var(--volt-bg-base);
+  border-color: var(--volt-border);
+  color: var(--volt-fg-primary);
+}
+
+.rv-search__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rv-search__btn--toggle.rv-search__btn--active {
+  background: var(--vscode-focusBorder, var(--volt-btn-bg));
+  border-color: var(--vscode-focusBorder, var(--volt-btn-bg));
+  color: var(--vscode-button-foreground, #fff);
+}
+
 /* Search highlight mark */
 mark.rv-search-mark {
   background: rgba(255, 210, 0, 0.35);
@@ -481,4 +512,20 @@ mark.rv-search-mark {
   border-radius: 2px;
   padding: 0 1px;
   outline: 1px solid rgba(255, 210, 0, 0.5);
+}
+
+/* Active match (current selection during nav) — stronger highlight */
+mark.rv-search-mark.rv-search-mark--active {
+  background: rgba(255, 165, 0, 0.75);
+  outline: 1px solid rgba(255, 140, 0, 0.9);
+  color: #1a1a1a;
+}
+
+/* Search toggle tab — visually distinct from content tabs */
+.rv-tab--search {
+  margin-left: auto;
+}
+
+.rv-tab--search.rv-tab--active {
+  color: var(--vscode-focusBorder, var(--volt-btn-bg));
 }

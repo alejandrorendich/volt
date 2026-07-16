@@ -14,7 +14,6 @@
 
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import * as path from 'path';
 import type { MessageRouter } from '../message-router';
 
 // ---------------------------------------------------------------------------
@@ -23,6 +22,9 @@ import type { MessageRouter } from '../message-router';
 
 const PANEL_VIEW_TYPE = 'volt.requestPanel';
 const PANEL_TITLE = 'Volt';
+
+/** Title prefix used to indicate the panel has unsaved changes (VS Code convention). */
+const DIRTY_TITLE_PREFIX = '\u25CF ';
 
 // ---------------------------------------------------------------------------
 // WebviewProvider
@@ -44,6 +46,13 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
   private readonly extensionUri: vscode.Uri;
   private readonly router: MessageRouter;
 
+  /**
+   * Last reported dirty state from the webview. Captured so the `onDidDispose`
+   * handler can show a warning when the user closes the panel with unsaved
+   * changes (VS Code's WebviewPanel does not let us cancel the close).
+   */
+  private isDirty = false;
+
   constructor(context: vscode.ExtensionContext, router: MessageRouter) {
     this.extensionUri = context.extensionUri;
     this.router = router;
@@ -52,6 +61,19 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
   // ---------------------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------------------
+
+  /**
+   * Update the panel's dirty marker. Called by `MessageRouter` whenever the
+   * webview reports a `webview:set-dirty` message. No-op if no panel is open
+   * or the state is unchanged.
+   */
+  setDirty(dirty: boolean): void {
+    if (this.isDirty === dirty) return;
+    this.isDirty = dirty;
+    if (this.panel) {
+      this.applyPanelTitle();
+    }
+  }
 
   /**
    * Opens the Volt panel. If a panel already exists, it is revealed instead of
@@ -85,6 +107,7 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
    * Called by VS Code when restoring a persisted panel across restarts.
    * @see REQ-EXT-003 — Panel restoration scenario
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async deserializeWebviewPanel(
     webviewPanel: vscode.WebviewPanel,
     _state: unknown,
@@ -101,7 +124,9 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
 
   dispose(): void {
     this.panel?.dispose();
-    this.disposables.forEach((d) => d.dispose());
+    this.disposables.forEach((d) => {
+      d.dispose();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -140,12 +165,27 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
     // Clean up on panel close
     panel.onDidDispose(
       () => {
+        // Best-effort warning: VS Code does not let the extension host cancel
+        // a WebviewPanel close, so the changes are already lost by this point.
+        if (this.isDirty) {
+          void vscode.window.showWarningMessage(
+            'Volt: panel closed with unsaved changes — they have been discarded.',
+            'OK',
+          );
+        }
+        this.isDirty = false;
         this.panel = undefined;
         this.router.setWebview(undefined);
       },
       undefined,
       this.disposables,
     );
+  }
+
+  /** Sync the panel title with the current dirty state. */
+  private applyPanelTitle(): void {
+    if (!this.panel) return;
+    this.panel.title = this.isDirty ? `${DIRTY_TITLE_PREFIX}${PANEL_TITLE}` : PANEL_TITLE;
   }
 
   /**
@@ -183,7 +223,7 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Volt</title>
-  <link rel="stylesheet" href="${styleUri}" />
+  <link rel="stylesheet" href="${styleUri.toString()}" />
 </head>
 <body>
   <div id="root">
@@ -191,7 +231,7 @@ export class WebviewProvider implements vscode.Disposable, vscode.WebviewPanelSe
       Volt is loading&hellip;
     </p>
   </div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
   }

@@ -27,6 +27,9 @@ import * as yaml from 'js-yaml';
 import * as vscode from 'vscode';
 import { validateRequestDef } from '../../shared/schemas';
 import type {
+  AssertionOperator,
+  AssertionRule,
+  AssertionSubject,
   HttpRequestDef,
   HttpMethod,
   CollectionTree,
@@ -155,6 +158,9 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * Scan `.volt/requests/` recursively and build a `CollectionTree`.
    * Ordering from `collection.yaml` is respected; unordered items are appended.
    */
+  // Sync FS under the hood, but the interface returns Promise<...> so callers can
+  // uniformly `await`. Acceptable trade-off for filesystem calls in this context.
+  // eslint-disable-next-line @typescript-eslint/require-await
   async loadTree(): Promise<CollectionTree> {
     const requestsDir = path.join(this.workspaceRoot, REQUESTS_DIR);
     const manifestPath = path.join(this.workspaceRoot, COLLECTION_YAML);
@@ -190,6 +196,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * The path is relative to `.volt/requests/` (e.g., `"auth/login"`).
    * A `.yaml` extension is appended if absent.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async saveRequest(relativeFilePath: string, request: HttpRequestDef): Promise<string> {
     const normalized = normalizeRelPath(relativeFilePath);
     let absPath = path.join(this.workspaceRoot, REQUESTS_DIR, normalized + '.yaml');
@@ -213,8 +220,8 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
       }
     }
 
-    await this.ensureDir(path.dirname(absPath));
-    await this.atomicWrite(absPath, buildRequestYaml(request));
+    this.ensureDir(path.dirname(absPath));
+    this.atomicWrite(absPath, buildRequestYaml(request));
     this.output.appendLine(`[CollectionService] Saved request: ${finalNormalized}`);
     return finalNormalized;
   }
@@ -223,6 +230,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * Load a single request from disk.
    * @param relativeFilePath - Relative to `.volt/requests/`, without extension.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async loadRequest(relativeFilePath: string): Promise<HttpRequestDef> {
     const normalized = normalizeRelPath(relativeFilePath);
     const absPath = path.join(this.workspaceRoot, REQUESTS_DIR, normalized + '.yaml');
@@ -251,6 +259,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * Delete a request YAML file from disk.
    * @param relativeFilePath - Relative to `.volt/requests/`, without extension.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async deleteRequest(relativeFilePath: string): Promise<void> {
     const normalized = normalizeRelPath(relativeFilePath);
     const absPath = path.join(this.workspaceRoot, REQUESTS_DIR, normalized + '.yaml');
@@ -261,7 +270,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
 
     fs.unlinkSync(absPath);
     // Remove from order manifest
-    await this.removeFromOrder(normalized);
+    this.removeFromOrder(normalized);
     this.output.appendLine(`[CollectionService] Deleted request: ${normalized}`);
   }
 
@@ -270,6 +279,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * Both paths are relative to `.volt/requests/`, without extension.
    * Updates the order manifest if the old path was referenced there.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async renameRequest(oldPath: string, newPath: string): Promise<void> {
     const oldNorm = normalizeRelPath(oldPath);
     let newNorm = normalizeRelPath(newPath);
@@ -309,11 +319,11 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
       // Non-fatal — file will still be renamed even if YAML update fails
     }
 
-    await this.ensureDir(path.dirname(newAbs));
+    this.ensureDir(path.dirname(newAbs));
     fs.renameSync(oldAbs, newAbs);
 
     // Update order manifest to reflect the new path
-    await this.updateOrderPath(oldNorm, newNorm);
+    this.updateOrderPath(oldNorm, newNorm);
     this.output.appendLine(`[CollectionService] Renamed request: ${oldNorm} → ${newNorm}`);
   }
 
@@ -324,9 +334,10 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    *
    * @param relativeFolderPath - e.g., `"auth"` or `"api/v2"`.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async createFolder(relativeFolderPath: string): Promise<void> {
     const absDir = path.join(this.workspaceRoot, REQUESTS_DIR, relativeFolderPath);
-    await this.ensureDir(absDir);
+    this.ensureDir(absDir);
     // Touch .keep so git tracks the empty folder
     const keepPath = path.join(absDir, KEEP_FILE);
     if (!fs.existsSync(keepPath)) {
@@ -340,6 +351,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * @param oldPath - Current relative path.
    * @param newPath - New relative path.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async renameFolder(oldPath: string, newPath: string): Promise<void> {
     const oldAbs = path.join(this.workspaceRoot, REQUESTS_DIR, oldPath);
     const newAbs = path.join(this.workspaceRoot, REQUESTS_DIR, newPath);
@@ -359,6 +371,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * Delete a folder and all its contents from disk.
    * @param relativeFolderPath - Relative to `.volt/requests/`.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async deleteFolder(relativeFolderPath: string): Promise<void> {
     const absDir = path.join(this.workspaceRoot, REQUESTS_DIR, relativeFolderPath);
 
@@ -374,6 +387,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * Update the order array in `collection.yaml`.
    * Call this after drag-and-drop reorders or any structural change.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async updateOrder(order: CollectionOrderEntry[]): Promise<void> {
     const manifestPath = path.join(this.workspaceRoot, COLLECTION_YAML);
 
@@ -392,8 +406,8 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
       order,
     };
 
-    await this.ensureDir(path.dirname(manifestPath));
-    await this.atomicWrite(manifestPath, yaml.dump(updated, { lineWidth: 120 }));
+    this.ensureDir(path.dirname(manifestPath));
+    this.atomicWrite(manifestPath, yaml.dump(updated, { lineWidth: 120 }));
   }
 
   // ---------------------------------------------------------------------------
@@ -412,6 +426,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * Idempotent — does nothing if the collection already exists.
    * Returns `true` if it was just created, `false` if it already existed.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async initCollection(): Promise<boolean> {
     const manifestPath = path.join(this.workspaceRoot, COLLECTION_YAML);
 
@@ -419,21 +434,21 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
       return false; // Already initialised
     }
 
-    await this.ensureDir(path.join(this.workspaceRoot, '.volt', 'envs'));
-    await this.ensureDir(path.join(this.workspaceRoot, REQUESTS_DIR));
+    this.ensureDir(path.join(this.workspaceRoot, '.volt', 'envs'));
+    this.ensureDir(path.join(this.workspaceRoot, REQUESTS_DIR));
 
     // Write collection manifest
-    await this.atomicWrite(manifestPath, DEFAULT_COLLECTION_YAML_CONTENT);
+    this.atomicWrite(manifestPath, DEFAULT_COLLECTION_YAML_CONTENT);
 
     // Write default environment
     const defaultEnvPath = path.join(this.workspaceRoot, '.volt', 'envs', 'default.yaml');
-    await this.atomicWrite(
+    this.atomicWrite(
       defaultEnvPath,
       `# Default environment\nname: "Default"\nvariables:\n  baseUrl: http://localhost:3000\n`,
     );
 
     // Add .secrets.local.yaml to .gitignore if not already there
-    await this.ensureSecretsIgnored();
+    this.ensureSecretsIgnored();
 
     this.output.appendLine('[CollectionService] Initialised new .volt/ collection');
     return true;
@@ -495,7 +510,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
         if (raw && typeof raw === 'object') {
           if (typeof raw.name === 'string') name = raw.name;
           if (typeof raw.method === 'string' && isValidMethod(raw.method)) {
-            method = raw.method as HttpMethod;
+            method = raw.method;
           }
         }
       } catch {
@@ -562,7 +577,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
     return undefined;
   }
 
-  private async ensureDir(absDir: string): Promise<void> {
+  private ensureDir(absDir: string): void {
     fs.mkdirSync(absDir, { recursive: true });
   }
 
@@ -570,13 +585,13 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
    * Atomic write: write to a temp file then rename.
    * On Windows, renameSync overwrites atomically on NTFS.
    */
-  private async atomicWrite(targetPath: string, content: string): Promise<void> {
+  private atomicWrite(targetPath: string, content: string): void {
     const tmp = targetPath + '.tmp';
     fs.writeFileSync(tmp, content, 'utf8');
     fs.renameSync(tmp, targetPath);
   }
 
-  private async removeFromOrder(relPath: string): Promise<void> {
+  private removeFromOrder(relPath: string): void {
     const manifestPath = path.join(this.workspaceRoot, COLLECTION_YAML);
     if (!fs.existsSync(manifestPath)) return;
 
@@ -588,7 +603,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
         (e) => !('request' in e && e.request === relPath),
       );
 
-      await this.atomicWrite(
+      this.atomicWrite(
         manifestPath,
         yaml.dump({ ...raw, order: filtered }, { lineWidth: 120 }),
       );
@@ -597,7 +612,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
     }
   }
 
-  private async updateOrderPath(oldRelPath: string, newRelPath: string): Promise<void> {
+  private updateOrderPath(oldRelPath: string, newRelPath: string): void {
     const manifestPath = path.join(this.workspaceRoot, COLLECTION_YAML);
     if (!fs.existsSync(manifestPath)) return;
 
@@ -609,7 +624,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
         'request' in e && e.request === oldRelPath ? { request: newRelPath } : e,
       );
 
-      await this.atomicWrite(
+      this.atomicWrite(
         manifestPath,
         yaml.dump({ ...raw, order: updated }, { lineWidth: 120 }),
       );
@@ -618,7 +633,7 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
     }
   }
 
-  private async ensureSecretsIgnored(): Promise<void> {
+  private ensureSecretsIgnored(): void {
     const gitignorePath = path.join(this.workspaceRoot, '.gitignore');
 
     if (!fs.existsSync(gitignorePath)) return;
@@ -702,7 +717,9 @@ export class CollectionService implements ICollectionService, vscode.Disposable 
     if (this.debounceHandle !== undefined) {
       clearTimeout(this.debounceHandle);
     }
-    this.disposables.forEach((d) => d.dispose());
+    this.disposables.forEach((d) => {
+      d.dispose();
+    });
     this.disposables.length = 0;
   }
 }
@@ -803,7 +820,7 @@ function buildRequestYaml(req: HttpRequestDef): string {
 function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDef {
   const method: HttpMethod =
     typeof raw.method === 'string' && isValidMethod(raw.method)
-      ? (raw.method as HttpMethod)
+      ? (raw.method)
       : 'GET';
 
   const url = typeof raw.url === 'string' ? raw.url : '';
@@ -937,7 +954,7 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
     typeof raw.timeout === 'number' && raw.timeout > 0 ? raw.timeout : undefined;
 
   // Parse assertions
-  const assertions: import('../../shared/models').AssertionRule[] = [];
+  const assertions: AssertionRule[] = [];
   if (Array.isArray(raw.assertions)) {
     const validSubjects = new Set(['status', 'time', 'jsonpath', 'header']);
     const validOperators = new Set(['eq', 'neq', 'contains', 'gt', 'lt', 'exists']);
@@ -953,9 +970,9 @@ function coerceToRequestDef(raw: RawRequestYaml, absPath: string): HttpRequestDe
         ) {
           assertions.push({
             id: ar['id'],
-            subject: subject as import('../../shared/models').AssertionSubject,
+            subject: subject as AssertionSubject,
             property: typeof ar['property'] === 'string' ? ar['property'] : '',
-            operator: operator as import('../../shared/models').AssertionOperator,
+            operator: operator as AssertionOperator,
             expected: typeof ar['expected'] === 'string' ? ar['expected'] : '',
           });
         }

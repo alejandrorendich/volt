@@ -9,7 +9,6 @@
 
 import React, { memo, useCallback, useState } from 'react';
 import type { AuthConfig } from '../../shared/models';
-import type { OAuth2TokenResponseMessage } from '../../shared/protocol';
 import { useRequestStore } from '../stores/request-store';
 import { useMessage } from '../hooks/useMessage';
 import './AuthPanel.css';
@@ -111,7 +110,7 @@ export const AuthPanel = memo(function AuthPanel(): React.ReactElement {
         },
       });
       if (response.type !== 'response:oauth2-token') return;
-      const msg = response as OAuth2TokenResponseMessage;
+      const msg = response;
       if ('error' in msg.payload) {
         setTokenError(msg.payload.error);
       } else {

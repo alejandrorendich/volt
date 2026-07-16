@@ -26,10 +26,23 @@ import type {
   WebviewMessage,
   CorrelationId,
   HistoryEntry,
+  ExecuteErrorCode,
 } from '../shared/protocol';
 import type { CookieService } from './services/cookie-service';
 import { WebSocketService } from './services/websocket-service';
 import { SseService } from './services/sse-service';
+import type {
+  CollectionTree,
+  CollectionTreeNode,
+  HttpMethod,
+  HttpRequestDef,
+  HttpResponseDef,
+  QueryParam,
+  RequestBody,
+  ResolvedEnv,
+  TimingPhase,
+} from '../shared/models';
+import type * as AwsSigV4Module from './utils/aws-sigv4';
 
 // ---------------------------------------------------------------------------
 // Service interface stubs (filled by later phases)
@@ -41,10 +54,10 @@ import { SseService } from './services/sse-service';
  */
 export interface IHttpService {
   execute(
-    request: import('../shared/models').HttpRequestDef,
+    request: HttpRequestDef,
     correlationId: CorrelationId,
-    onProgress?: (phase: import('../shared/models').TimingPhase, elapsed: number) => void,
-  ): Promise<import('../shared/models').HttpResponseDef>;
+    onProgress?: (phase: TimingPhase, elapsed: number) => void,
+  ): Promise<HttpResponseDef>;
   cancel(requestId: string): void;
 }
 
@@ -53,9 +66,9 @@ export interface IHttpService {
  * Phase 4 provides the concrete implementation.
  */
 export interface ICollectionService {
-  loadTree(): Promise<import('../shared/models').CollectionTree>;
-  saveRequest(filePath: string, request: import('../shared/models').HttpRequestDef): Promise<string>;
-  getRequest(filePath: string): Promise<import('../shared/models').HttpRequestDef | null>;
+  loadTree(): Promise<CollectionTree>;
+  saveRequest(filePath: string, request: HttpRequestDef): Promise<string>;
+  getRequest(filePath: string): Promise<HttpRequestDef | null>;
   createFolder(relativeFolderPath: string): Promise<void>;
 }
 
@@ -65,7 +78,7 @@ export interface ICollectionService {
  */
 export interface IEnvironmentService {
   setActive(name: string): Promise<void>;
-  getResolved(): Promise<import('../shared/models').ResolvedEnv>;
+  getResolved(): Promise<ResolvedEnv>;
   /** Create a new environment file. */
   createEnvironment(name: string): Promise<void>;
   /** Update variables in the active environment file (merge). */
@@ -78,10 +91,10 @@ export interface IEnvironmentService {
   renameEnvironment(oldName: string, newName: string): Promise<void>;
   /** Apply {{var}} interpolation to all fields of a request. */
   resolveRequest?(
-    request: import('../shared/models').HttpRequestDef,
+    request: HttpRequestDef,
     requestVars?: Record<string, string>,
     collectionVars?: Record<string, string>,
-  ): import('../shared/models').HttpRequestDef;
+  ): HttpRequestDef;
 }
 
 /**
@@ -119,6 +132,13 @@ export class MessageRouter implements vscode.Disposable {
   /** Messages queued before the webview-ready handshake fires. */
   private readonly pendingQueue: WebviewMessage[] = [];
   private isWebviewReady = false;
+
+  /**
+   * Callback fired whenever the webview reports its dirty state changed.
+   * The WebviewProvider uses this to update the panel title and to
+   * decide whether to show a warning on panel close.
+   */
+  onDirtyStateChanged?: (dirty: boolean) => void;
 
   /** Optional callback fired after a successful environment switch. */
   onEnvironmentChanged?: (envName: string) => void;
@@ -171,7 +191,7 @@ export class MessageRouter implements vscode.Disposable {
       return;
     }
 
-    const msg = raw as HostMessage;
+    const msg = raw;
     this.dispatch(msg).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       this.output.appendLine(`[MessageRouter] ERROR dispatching ${msg.type}: ${message}`);
@@ -226,6 +246,21 @@ export class MessageRouter implements vscode.Disposable {
       });
     }).catch((err: unknown) => {
       this.output.appendLine(`[MessageRouter] ERROR pushing request: ${String(err)}`);
+    });
+  }
+
+  /**
+   * Ask the webview to open an empty new-request tab. No file is created
+   * until the user fills the form and saves — at that point the host's
+   * `handleSaveRequest` either uses an existing `savePath` or prompts for one.
+   *
+   * Used by `volt.newRequest` after my custom Change to decouple file
+   * creation from click — gives a natural Save-As UX.
+   */
+  openEmptyNewRequest(): void {
+    this.send({
+      type: 'event:new-request',
+      correlationId: `newreq-${Date.now()}`,
     });
   }
 
@@ -328,7 +363,7 @@ export class MessageRouter implements vscode.Disposable {
         break;
 
       case 'request:ws-connect':
-        await this.handleWsConnect(msg.correlationId, msg.payload.url, msg.payload.headers);
+        this.handleWsConnect(msg.correlationId, msg.payload.url, msg.payload.headers);
         break;
 
       case 'request:ws-send':
@@ -337,6 +372,10 @@ export class MessageRouter implements vscode.Disposable {
 
       case 'request:ws-disconnect':
         this.handleWsDisconnect();
+        break;
+
+      case 'webview:set-dirty':
+        this.handleSetDirty(msg.payload.dirty);
         break;
 
       default: {
@@ -395,7 +434,7 @@ export class MessageRouter implements vscode.Disposable {
   /** Execute an HTTP request via HttpService (Phase 3 wires the real service). */
   private async handleExecuteRequest(
     correlationId: CorrelationId,
-    request: import('../shared/models').HttpRequestDef,
+    request: HttpRequestDef,
   ): Promise<void> {
     if (!this.services.http) {
       this.sendToWebview({
@@ -451,7 +490,7 @@ export class MessageRouter implements vscode.Disposable {
       }
 
       // Progress callback — pushes event:request-progress to webview (REQ-MSG-003)
-      const onProgress = (phase: import('../shared/models').TimingPhase, elapsed: number): void => {
+      const onProgress = (phase: TimingPhase, elapsed: number): void => {
         this.sendToWebview({
           type: 'event:request-progress',
           correlationId,
@@ -530,7 +569,7 @@ export class MessageRouter implements vscode.Disposable {
         this.sendToWebview({
           type: 'response:execute-error',
           correlationId,
-          payload: { message, code: code as import('../shared/protocol').ExecuteErrorCode },
+          payload: { message, code: code as ExecuteErrorCode },
         });
     }
   }
@@ -559,7 +598,7 @@ export class MessageRouter implements vscode.Disposable {
   /** Persist a request definition via CollectionService (Phase 4). */
   private async handleSaveRequest(
     correlationId: CorrelationId,
-    payload: { path: string; request: import('../shared/models').HttpRequestDef },
+    payload: { path: string; request: HttpRequestDef },
   ): Promise<void> {
     if (!this.services.collection) {
       this.output.appendLine('[MessageRouter] CollectionService not yet available — save-request ignored');
@@ -897,7 +936,7 @@ export class MessageRouter implements vscode.Disposable {
       // Collect all request paths inside the folder (recursive)
       const requestPaths: string[] = [];
       const collectPaths = (
-        nodes: readonly import('../shared/models').CollectionTreeNode[],
+        nodes: readonly CollectionTreeNode[],
       ): void => {
         for (const node of nodes) {
           if (node.kind === 'request') {
@@ -991,7 +1030,7 @@ export class MessageRouter implements vscode.Disposable {
       if (
         !parsed ||
         typeof parsed !== 'object' ||
-        !('type' in (parsed as object))
+        !('type' in (parsed))
       ) {
         void vscode.window.showErrorMessage('Volt: Unrecognised import format (missing "type" field).');
         return;
@@ -1093,7 +1132,7 @@ export class MessageRouter implements vscode.Disposable {
   ): Promise<void> {
     if (!this.services.collection) return;
 
-    const method = (typeof raw['method'] === 'string' ? raw['method'] : 'GET') as import('../shared/models').HttpMethod;
+    const method = (typeof raw['method'] === 'string' ? raw['method'] : 'GET') as HttpMethod;
     const url = typeof raw['url'] === 'string' ? raw['url'] : '';
     const name = typeof raw['name'] === 'string' ? raw['name'] : savePath.split('/').pop() ?? savePath;
 
@@ -1118,7 +1157,7 @@ export class MessageRouter implements vscode.Disposable {
       }
     }
 
-    let body: import('../shared/models').RequestBody | undefined;
+    let body: RequestBody | undefined;
     if (raw['body'] && typeof raw['body'] === 'object') {
       const b = raw['body'] as Record<string, unknown>;
       const type = b['type'];
@@ -1132,7 +1171,7 @@ export class MessageRouter implements vscode.Disposable {
     const preScript = typeof raw['preScript'] === 'string' ? raw['preScript'] : undefined;
     const postScript = typeof raw['postScript'] === 'string' ? raw['postScript'] : undefined;
 
-    const request: import('../shared/models').HttpRequestDef = {
+    const request: HttpRequestDef = {
       id: savePath,
       name,
       method,
@@ -1371,7 +1410,7 @@ export class MessageRouter implements vscode.Disposable {
    */
   private async handleSseRequest(
     correlationId: CorrelationId,
-    request: import('../shared/models').HttpRequestDef,
+    request: HttpRequestDef,
   ): Promise<void> {
     this.output.appendLine(`[MessageRouter] SSE stream starting — ${request.url}`);
 
@@ -1423,11 +1462,11 @@ export class MessageRouter implements vscode.Disposable {
    * Open a WebSocket connection.
    * Environment variable interpolation is applied to the URL before connecting.
    */
-  private async handleWsConnect(
+  private handleWsConnect(
     correlationId: CorrelationId,
     url: string,
     headers?: Record<string, string>,
-  ): Promise<void> {
+  ): void {
     // Interpolate {{variables}} in the URL
     const resolvedUrl = this.services.environment?.resolveRequest
       ? (this.services.environment.resolveRequest({
@@ -1500,6 +1539,14 @@ export class MessageRouter implements vscode.Disposable {
     this.wsService.disconnect();
   }
 
+  /**
+   * Forward the webview's dirty state to whoever subscribed
+   * (`WebviewProvider` uses it for the panel title + on-close warning).
+   */
+  private handleSetDirty(dirty: boolean): void {
+    this.onDirtyStateChanged?.(dirty);
+  }
+
   // ---------------------------------------------------------------------------
   // Internal send — bypasses queue (used for flushing and error responses)
   // ---------------------------------------------------------------------------
@@ -1567,8 +1614,8 @@ function isHostMessage(value: unknown): value is HostMessage {
  * - AWS:     SigV4 — Authorization + X-Amz-Date headers (see aws-sigv4.ts)
  */
 function applyAuth(
-  request: import('../shared/models').HttpRequestDef,
-): import('../shared/models').HttpRequestDef {
+  request: HttpRequestDef,
+): HttpRequestDef {
   const auth = request.auth;
   if (!auth || auth.type === 'none') return request;
 
@@ -1590,7 +1637,7 @@ function applyAuth(
         return { ...request, headers };
       } else {
         // Append as query parameter — preserve existing enabled params
-        const extraParam: import('../shared/models').QueryParam = {
+        const extraParam: QueryParam = {
           key: auth.key,
           value: auth.value,
           enabled: true,
@@ -1609,7 +1656,7 @@ function applyAuth(
 
     case 'aws': {
       // AWS SigV4 — sign the request with HMAC-SHA256
-      const { signRequest } = require('./utils/aws-sigv4') as typeof import('./utils/aws-sigv4');
+      const { signRequest } = require('./utils/aws-sigv4') as typeof AwsSigV4Module;
       const b = request.body;
       const bodyStr =
         b && b.type !== 'none' && b.type !== 'binary' && b.type !== 'graphql'

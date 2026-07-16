@@ -26,6 +26,9 @@ import { importPostmanCollection } from './services/postman-import';
 import { buildCurlCommand } from './utils/curl';
 import { parseCurl } from './utils/curl-parser';
 import { UpdateService } from './services/update-service';
+import * as nodeFs from 'fs';
+import * as nodePath from 'path';
+import type { HttpMethod, HttpRequestDef } from '../shared/models';
 
 // ---------------------------------------------------------------------------
 // Activation
@@ -54,7 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   if (!workspaceRoot) {
     output.appendLine('[Volt] No workspace folder open — collection and environment features disabled.');
-    vscode.window.showWarningMessage(
+    void vscode.window.showWarningMessage(
       'Volt: Open a folder to save requests and use environments.',
     );
   }
@@ -116,6 +119,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const webviewProvider = new WebviewProvider(context, router);
   context.subscriptions.push(webviewProvider);
 
+  // Forward webview dirty state to the provider so the panel title reflects it
+  // and the onDispose warning can fire when the user closes with unsaved data.
+  router.onDirtyStateChanged = (dirty) => webviewProvider.setDirty(dirty);
+
   // 5. Collection tree provider — wired to CollectionService
   const treeProvider = new CollectionTreeProvider();
   if (collectionService) {
@@ -138,41 +145,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // volt.newRequest — create a new request at the root of the collection
   context.subscriptions.push(
-    vscode.commands.registerCommand('volt.newRequest', async () => {
+    vscode.commands.registerCommand('volt.newRequest', () => {
       output.appendLine('[Volt] Command: volt.newRequest');
       if (!collectionService) {
-        vscode.window.showWarningMessage('Volt: Open a folder to create requests.');
+        void vscode.window.showWarningMessage('Volt: Open a folder to create requests.');
         webviewProvider.openPanel();
         return;
       }
-      // Auto-generate a unique name
-      const baseName = 'new-request';
-      let name = baseName;
-      let attempt = 1;
-      while (true) {
-        try {
-          await collectionService.loadRequest(name);
-          attempt++;
-          name = `${baseName}-${attempt}`;
-        } catch {
-          break; // doesn't exist, use this name
-        }
-      }
-      try {
-        await collectionService.saveRequest(name, {
-          id: name,
-          name,
-          method: 'GET',
-          url: '',
-          headers: { 'Content-Type': 'application/json', 'Accept': '*/*' },
-          queryParams: [],
-        });
-        treeProvider.refresh();
-        webviewProvider.openPanel();
-        setTimeout(() => router.pushRequest(name), 100);
-      } catch (err: unknown) {
-        output.appendLine(`[Volt] ERROR in newRequest: ${String(err)}`);
-      }
+      // Open an empty tab. No file is created — Save will prompt for the
+      // path (folder prefix like `auth/get-user` auto-creates the folder).
+      webviewProvider.openPanel();
+      router.openEmptyNewRequest();
     }),
   );
 
@@ -220,15 +203,15 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       if (!name) return;
       if (!environmentService) {
-        vscode.window.showWarningMessage('Volt: Open a folder to manage environments.');
+        void vscode.window.showWarningMessage('Volt: Open a folder to manage environments.');
         return;
       }
       try {
         await environmentService.createEnvironment(name);
-        vscode.window.showInformationMessage(`Volt: Environment "${name}" created.`);
+        void vscode.window.showInformationMessage(`Volt: Environment "${name}" created.`);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`Volt: ${msg}`);
+        void vscode.window.showErrorMessage(`Volt: ${msg}`);
       }
     }),
   );
@@ -246,7 +229,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('volt.initCollection', async () => {
       output.appendLine('[Volt] Command: volt.initCollection');
       if (!collectionService) {
-        vscode.window.showWarningMessage('Volt: Open a folder to initialise a collection.');
+        void vscode.window.showWarningMessage('Volt: Open a folder to initialise a collection.');
         return;
       }
       try {
@@ -294,14 +277,15 @@ export function activate(context: vscode.ExtensionContext): void {
       let attempt = 1;
       const relPathBase = folderName ? `${folderName}/${baseName}` : baseName;
       let relPath = relPathBase;
-      while (true) {
+      let exists = true;
+      while (exists) {
         try {
           await collectionService.loadRequest(relPath);
           attempt++;
           name = `${baseName}-${attempt}`;
           relPath = folderName ? `${folderName}/${name}` : name;
         } catch {
-          break;
+          exists = false;
         }
       }
       await collectionService.saveRequest(relPath, {
@@ -321,21 +305,33 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('volt.newFolder', async () => {
       output.appendLine('[Volt] Command: volt.newFolder');
-      if (!collectionService) return;
-      // Auto-generate a unique folder name
-      const fs = await import('fs');
-      const path = await import('path');
+      if (!collectionService) {
+        void vscode.window.showWarningMessage('Volt: Open a folder to use Volt commands.');
+        return;
+      }
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      if (!workspaceRoot) return;
+      if (!workspaceRoot) {
+        void vscode.window.showWarningMessage('Volt: Open a folder to manage collections.');
+        return;
+      }
+      // Auto-generate a unique folder name
       const baseName = 'new-folder';
       let name = baseName;
       let attempt = 1;
-      while (fs.existsSync(path.join(workspaceRoot, '.volt', 'requests', name))) {
-        attempt++;
-        name = `${baseName}-${attempt}`;
+      try {
+        const requestsDir = nodePath.join(workspaceRoot, '.volt', 'requests');
+        while (nodeFs.existsSync(nodePath.join(requestsDir, name))) {
+          attempt++;
+          name = `${baseName}-${attempt}`;
+        }
+        await collectionService.createFolder(name);
+        treeProvider.refresh();
+        output.appendLine(`[Volt] Created folder: ${name}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[Volt] ERROR in newFolder: ${msg}`);
+        void vscode.window.showErrorMessage(`Volt: Failed to create folder — ${msg}`);
       }
-      await collectionService.createFolder(name);
-      treeProvider.refresh();
     }),
   );
 
@@ -427,7 +423,7 @@ export function activate(context: vscode.ExtensionContext): void {
       output.appendLine('[Volt] Command: volt.importPostman');
 
       if (!collectionService || !environmentService) {
-        vscode.window.showWarningMessage('Volt: Open a folder to import a Postman collection.');
+        void vscode.window.showWarningMessage('Volt: Open a folder to import a Postman collection.');
         return;
       }
 
@@ -479,14 +475,15 @@ export function activate(context: vscode.ExtensionContext): void {
         // Find a unique name by appending -copy, -copy-2, etc.
         let copyPath = `${relPath}-copy`;
         let attempt = 1;
-        while (true) {
+        let exists = true;
+        while (exists) {
           try {
             await collectionService.loadRequest(copyPath);
             // Exists — try next suffix
             attempt++;
             copyPath = `${relPath}-copy-${attempt}`;
           } catch {
-            break; // Doesn't exist — use this path
+            exists = false; // Doesn't exist — use this path
           }
         }
         await collectionService.saveRequest(copyPath, {
@@ -510,13 +507,15 @@ export function activate(context: vscode.ExtensionContext): void {
       const folderName = String((item as { label: unknown }).label);
       try {
         // Find a unique folder name
-        const fs = await import('fs');
-        const path = await import('path');
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (!workspaceRoot) return;
+        if (!workspaceRoot) {
+          void vscode.window.showWarningMessage('Volt: Open a folder to use Volt commands.');
+          return;
+        }
         let copyFolder = `${folderName}-copy`;
         let attempt = 1;
-        while (fs.existsSync(path.join(workspaceRoot, '.volt', 'requests', copyFolder))) {
+        const requestsDir = nodePath.join(workspaceRoot, '.volt', 'requests');
+        while (nodeFs.existsSync(nodePath.join(requestsDir, copyFolder))) {
           attempt++;
           copyFolder = `${folderName}-copy-${attempt}`;
         }
@@ -540,7 +539,9 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         treeProvider.refresh();
       } catch (err: unknown) {
-        output.appendLine(`[Volt] ERROR in duplicateFolder: ${String(err)}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        output.appendLine(`[Volt] ERROR in duplicateFolder: ${msg}`);
+        void vscode.window.showErrorMessage(`Volt: Failed to duplicate folder — ${msg}`);
       }
     }),
   );
@@ -634,7 +635,7 @@ export function activate(context: vscode.ExtensionContext): void {
         // Resolve environment variables if environment service is available
         let resolved = request;
         if (environmentService && typeof environmentService.resolveRequest === 'function') {
-          resolved = await environmentService.resolveRequest(request) ?? request;
+          resolved = environmentService.resolveRequest(request) ?? request;
         }
 
         const curlCmd = buildCurlCommand(resolved);
@@ -654,7 +655,7 @@ export function activate(context: vscode.ExtensionContext): void {
       output.appendLine('[Volt] Command: volt.runCollection');
 
       if (!collectionService) {
-        vscode.window.showWarningMessage('Volt: Open a folder to run a collection.');
+        void vscode.window.showWarningMessage('Volt: Open a folder to run a collection.');
         return;
       }
 
@@ -670,7 +671,7 @@ export function activate(context: vscode.ExtensionContext): void {
           .map((n) => n.name);
 
         if (folders.length === 0) {
-          vscode.window.showWarningMessage('Volt: No folders found in the collection.');
+          void vscode.window.showWarningMessage('Volt: No folders found in the collection.');
           return;
         }
 
@@ -710,7 +711,7 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         undefined as unknown as vscode.Webview,
       );
-      vscode.window.showInformationMessage('Volt: Cookie jar cleared.');
+      void vscode.window.showInformationMessage('Volt: Cookie jar cleared.');
     }),
   );
 
@@ -720,7 +721,7 @@ export function activate(context: vscode.ExtensionContext): void {
       output.appendLine('[Volt] Command: volt.createCrudScaffold');
 
       if (!collectionService) {
-        vscode.window.showWarningMessage('Volt: Open a folder to create requests.');
+        void vscode.window.showWarningMessage('Volt: Open a folder to create requests.');
         return;
       }
 
@@ -751,7 +752,7 @@ export function activate(context: vscode.ExtensionContext): void {
       type ScaffoldEntry = {
         name: string;
         relPath: string;
-        method: import('../shared/models').HttpMethod;
+        method: HttpMethod;
         url: string;
         hasBody: boolean;
       };
@@ -769,7 +770,7 @@ export function activate(context: vscode.ExtensionContext): void {
         await collectionService.createFolder(resource);
 
         for (const entry of scaffoldRequests) {
-          const requestDef: import('../shared/models').HttpRequestDef = {
+          const requestDef: HttpRequestDef = {
             id: entry.relPath,
             name: entry.name,
             method: entry.method,
@@ -782,7 +783,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
 
         treeProvider.refresh();
-        vscode.window.showInformationMessage(
+        void vscode.window.showInformationMessage(
           `Volt: Created CRUD scaffold for "${resource}" with 5 requests.`,
         );
       } catch (err: unknown) {
@@ -799,7 +800,7 @@ export function activate(context: vscode.ExtensionContext): void {
       output.appendLine('[Volt] Command: volt.importCurl');
 
       if (!collectionService) {
-        vscode.window.showWarningMessage('Volt: Open a folder to import requests.');
+        void vscode.window.showWarningMessage('Volt: Open a folder to import requests.');
         return;
       }
 
@@ -819,13 +820,14 @@ export function activate(context: vscode.ExtensionContext): void {
       const baseName = 'curl-import';
       let name = baseName;
       let attempt = 1;
-      while (true) {
+      let exists = true;
+      while (exists) {
         try {
           await collectionService.loadRequest(name);
           attempt++;
           name = `${baseName}-${attempt}`;
         } catch {
-          break;
+          exists = false;
         }
       }
 
@@ -922,7 +924,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 10. Update check — non-blocking, once per session (fire-and-forget)
   const updateService = new UpdateService(
     output,
-    String(context.extension.packageJSON['version'] ?? '0.0.0'),
+    String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
   );
   void updateService.checkForUpdates();
 }

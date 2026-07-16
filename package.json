@@ -7,7 +7,7 @@
   "license": "MIT",
   "private": true,
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.86.0"
   },
   "categories": [
     "Other"
@@ -39,7 +39,8 @@
     "onCommand:volt.runCollection",
     "onCommand:volt.clearCookies",
     "onCommand:volt.createCrudScaffold",
-    "onCommand:volt.importCurl"
+    "onCommand:volt.importCurl",
+    "onView:volt.collectionTree"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -128,7 +129,7 @@
         "command": "volt.import",
         "title": "Import Request or Collection",
         "category": "Volt",
-        "icon": "$(import)"
+        "icon": "$(file-import)"
       },
       {
         "command": "volt.duplicateRequest",
@@ -146,7 +147,7 @@
         "command": "volt.importPostman",
         "title": "Import from Postman",
         "category": "Volt",
-        "icon": "$(import)"
+        "icon": "$(library)"
       },
       {
         "command": "volt.renameRequest",
@@ -214,39 +215,46 @@
     "menus": {
       "view/title": [
         {
-          "command": "volt.refreshTree",
-          "when": "view == volt.collectionTree",
-          "group": "navigation"
-        },
-        {
           "command": "volt.newRequest",
-          "when": "view == volt.collectionTree",
+          "when": "view == volt.collectionTree && workspaceFolderCount > 0",
           "group": "navigation"
         },
         {
           "command": "volt.newFolder",
-          "when": "view == volt.collectionTree",
+          "when": "view == volt.collectionTree && workspaceFolderCount > 0",
           "group": "navigation"
         },
         {
           "command": "volt.import",
-          "when": "view == volt.collectionTree",
+          "when": "view == volt.collectionTree && workspaceFolderCount > 0",
           "group": "navigation"
+        },
+        {
+          "submenu": "volt.moreActions",
+          "when": "view == volt.collectionTree && workspaceFolderCount > 0",
+          "group": "navigation"
+        }
+      ],
+      "volt.moreActions": [
+        {
+          "command": "volt.refreshTree",
+          "when": "view == volt.collectionTree && workspaceFolderCount > 0",
+          "group": "1_tree"
         },
         {
           "command": "volt.importPostman",
-          "when": "view == volt.collectionTree",
-          "group": "navigation"
-        },
-        {
-          "command": "volt.createCrudScaffold",
-          "when": "view == volt.collectionTree",
-          "group": "navigation"
+          "when": "view == volt.collectionTree && workspaceFolderCount > 0",
+          "group": "2_imports"
         },
         {
           "command": "volt.importCurl",
-          "when": "view == volt.collectionTree",
-          "group": "navigation"
+          "when": "view == volt.collectionTree && workspaceFolderCount > 0",
+          "group": "2_imports"
+        },
+        {
+          "command": "volt.createCrudScaffold",
+          "when": "view == volt.collectionTree && workspaceFolderCount > 0",
+          "group": "3_scaffold"
         }
       ],
       "view/item/context": [
@@ -344,7 +352,14 @@
           "when": "true"
         }
       ]
-    }
+    },
+    "submenus": [
+      {
+        "id": "volt.moreActions",
+        "label": "More Actions",
+        "icon": "$(ellipsis)"
+      }
+    ]
   },
   "scripts": {
     "build": "npm run build:ext && npm run build:webview",
@@ -366,6 +381,7 @@
   },
   "dependencies": {
     "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "dompurify": "^3.4.11",
     "js-yaml": "^4.1.0",
     "marked": "^18.0.5",

@@ -194,7 +194,6 @@ interface EnvEditorProps {
 const EnvEditor = memo(function EnvEditor({
   envName,
   variables,
-  canDelete,
   onUpdateVar,
   onDeleteVar,
   onDeleteEnv,

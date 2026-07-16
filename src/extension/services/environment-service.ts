@@ -87,8 +87,9 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
    * Perform initial load of all env files and start file watcher.
    * Call this once after construction (from `activate.ts`).
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async initialise(): Promise<void> {
-    await this.loadAll();
+    this.loadAll();
     this.startWatcher();
     // Default: activate the first available environment (alphabetically)
     const names = Array.from(this.environments.keys()).sort();
@@ -102,10 +103,11 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
   // IEnvironmentService
   // ---------------------------------------------------------------------------
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async setActive(name: string): Promise<void> {
     if (!this.environments.has(name)) {
       // Try reloading from disk in case the file was just created
-      await this.loadAll();
+      this.loadAll();
     }
 
     if (!this.environments.has(name)) {
@@ -116,6 +118,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
     this.output.appendLine(`[EnvironmentService] Switched to environment: ${name}`);
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async getResolved(): Promise<ResolvedEnv> {
     return this.buildResolved();
   }
@@ -139,6 +142,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
    * The file is created with an empty variables object.
    * @param name - Environment name (used as filename and display name).
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async createEnvironment(name: string): Promise<void> {
     const envsDir = path.join(this.workspaceRoot, ENVS_DIR);
 
@@ -159,7 +163,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
     );
 
     fs.writeFileSync(filePath, content, 'utf8');
-    await this.loadAll();
+    this.loadAll();
     this.output.appendLine(`[EnvironmentService] Created environment: ${name}`);
   }
 
@@ -167,6 +171,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
    * Remove a single variable key from the active environment file.
    * No-op if the key does not exist.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async deleteVariable(key: string): Promise<void> {
     if (!this.activeName) {
       throw new Error('No active environment — cannot delete variable.');
@@ -193,7 +198,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
 
     const content = yaml.dump(raw, { lineWidth: 120 });
     fs.writeFileSync(filePath, content, 'utf8');
-    await this.loadAll();
+    this.loadAll();
     this.output.appendLine(`[EnvironmentService] Deleted variable "${key}" from "${this.activeName}"`);
   }
 
@@ -211,7 +216,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
     }
 
     fs.unlinkSync(filePath);
-    await this.loadAll();
+    this.loadAll();
     this.output.appendLine(`[EnvironmentService] Deleted environment: ${name}`);
 
     // Auto-switch to first available, or create a default if none remain (H-04)
@@ -230,6 +235,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
    * Rename an environment (renames the YAML file on disk).
    * If the renamed environment was active, updates the active name.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async renameEnvironment(oldName: string, newName: string): Promise<void> {
     if (!/^[a-zA-Z0-9_-]+$/.test(newName)) {
       throw new Error(`Invalid environment name: "${newName}". Use only letters, numbers, hyphens, underscores.`);
@@ -259,7 +265,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
       this.activeName = newName;
     }
 
-    await this.loadAll();
+    this.loadAll();
     this.output.appendLine(`[EnvironmentService] Renamed environment: ${oldName} → ${newName}`);
   }
 
@@ -267,6 +273,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
    * Update (merge) variables into the active environment file.
    * Used by ScriptRunner to persist env.set() calls from scripts.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   async updateVariables(updates: Record<string, string>): Promise<void> {
     if (!this.activeName) {
       throw new Error('No active environment — cannot persist variable updates.');
@@ -297,7 +304,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
 
     const content = yaml.dump(raw, { lineWidth: 120 });
     fs.writeFileSync(filePath, content, 'utf8');
-    await this.loadAll();
+    this.loadAll();
     this.output.appendLine(`[EnvironmentService] Updated variables in "${this.activeName}": ${Object.keys(updates).join(', ')}`);
   }
 
@@ -361,7 +368,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
     requestVars: Record<string, string> = {},
     collectionVars: Record<string, string> = {},
   ): HttpRequestDef {
-    const interp = (s: string) => this.interpolate(s, requestVars, collectionVars).value;
+    const interp = (s: string): string => this.interpolate(s, requestVars, collectionVars).value;
 
     // Interpolate URL
     const url = interp(request.url);
@@ -407,7 +414,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
   // Loading
   // ---------------------------------------------------------------------------
 
-  private async loadAll(): Promise<void> {
+  private loadAll(): void {
     this.environments.clear();
 
     const envsDir = path.join(this.workspaceRoot, ENVS_DIR);
@@ -431,7 +438,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
       if (!file.endsWith('.yaml') && !file.endsWith('.yml')) continue;
 
       const filePath = path.join(envsDir, file);
-      await this.loadEnvFile(filePath);
+      this.loadEnvFile(filePath);
     }
 
     this.output.appendLine(
@@ -439,7 +446,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
     );
   }
 
-  private async loadEnvFile(filePath: string): Promise<void> {
+  private loadEnvFile(filePath: string): void {
     try {
       const raw = fs.readFileSync(filePath, 'utf8');
       const parsed = yaml.load(raw) as Record<string, unknown>;
@@ -507,7 +514,7 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
     }
   }
 
-  private validateSecretsGitignored(secretsPath: string): void {
+  private validateSecretsGitignored(_secretsPath: string): void {
     const gitignorePath = path.join(this.workspaceRoot, '.gitignore');
 
     if (!fs.existsSync(gitignorePath)) {
@@ -575,15 +582,15 @@ export class EnvironmentService implements IEnvironmentService, vscode.Disposabl
 
     this.watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-    const reload = async () => {
+    const reload = (): void => {
       this.output.appendLine('[EnvironmentService] Env file change detected — reloading');
-      await this.loadAll();
+      this.loadAll();
       this.onDidChange?.();
     };
 
-    this.watcher.onDidChange(() => void reload());
-    this.watcher.onDidCreate(() => void reload());
-    this.watcher.onDidDelete(() => void reload());
+    this.watcher.onDidChange(reload);
+    this.watcher.onDidCreate(reload);
+    this.watcher.onDidDelete(reload);
 
     this.output.appendLine('[EnvironmentService] File watcher started for .volt/envs/');
   }

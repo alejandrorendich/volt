@@ -145,7 +145,7 @@ export class UpdateService {
               const vsixAsset = assets.find(
                 (a) =>
                   typeof a['name'] === 'string' &&
-                  (a['name'] as string).endsWith('.vsix'),
+                  (a['name']).endsWith('.vsix'),
               );
 
               if (!vsixAsset) {
@@ -155,7 +155,7 @@ export class UpdateService {
 
               const vsixUrl =
                 typeof vsixAsset['browser_download_url'] === 'string'
-                  ? (vsixAsset['browser_download_url'] as string)
+                  ? (vsixAsset['browser_download_url'])
                   : null;
 
               if (!vsixUrl) {

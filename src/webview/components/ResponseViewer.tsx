@@ -7,7 +7,7 @@
  * @see REQ-RV-001 through REQ-RV-006
  */
 
-import React, { memo, useCallback, useMemo, useState, useRef, useEffect } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useResponseStore } from '../stores/response-store';
 import { useRequestStore } from '../stores/request-store';
 import { useMessage } from '../hooks/useMessage';
@@ -55,7 +55,7 @@ function highlightJson(json: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(
-      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
       (match) => {
         let cls = 'rv-json-number';
         if (/^"/.test(match)) {
@@ -75,20 +75,27 @@ function highlightJson(json: string): string {
  * Wraps text-node matches with `<mark class="rv-search-mark">`.
  * Operates on the raw HTML — only highlights within text outside `<...>` tags.
  */
-function applySearchHighlightHtml(html: string, term: string): string {
+function applySearchHighlightHtml(
+  html: string,
+  term: string,
+  caseSensitive = false,
+): string {
   if (!term) return html;
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`(${escaped})(?=[^<]*(?:<|$))`, 'gi');
+  const flags = caseSensitive ? 'g' : 'gi';
+  const re = new RegExp(`(${escaped})(?=[^<]*(?:<|$))`, flags);
   return html.replace(re, '<mark class="rv-search-mark">$1</mark>');
 }
 
 /**
- * Count total occurrences of `term` in `text` (case-insensitive).
+ * Count total occurrences of `term` in `text`.
+ * `caseSensitive` toggles case-insensitive (default `false`) matching.
  */
-function countMatches(text: string, term: string): number {
+function countMatches(text: string, term: string, caseSensitive = false): number {
   if (!term) return 0;
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return (text.match(new RegExp(escaped, 'gi')) ?? []).length;
+  const flags = caseSensitive ? 'g' : 'gi';
+  return (text.match(new RegExp(escaped, flags)) ?? []).length;
 }
 
 /**
@@ -97,17 +104,23 @@ function countMatches(text: string, term: string): number {
 function PlainTextWithHighlight({
   text,
   term,
+  caseSensitive = false,
 }: {
   text: string;
   term: string;
+  caseSensitive?: boolean;
 }): React.ReactElement {
   if (!term) return <>{text}</>;
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  const flags = caseSensitive ? 'g' : 'gi';
+  const parts = text.split(new RegExp(`(${escaped})`, flags));
+  const cmp = caseSensitive
+    ? (s: string, t: string): boolean => s === t
+    : (s: string, t: string): boolean => s.toLowerCase() === t.toLowerCase();
   return (
     <>
       {parts.map((part, i) =>
-        part.toLowerCase() === term.toLowerCase() ? (
+        cmp(part, term) ? (
           <mark key={i} className="rv-search-mark">
             {part}
           </mark>
@@ -128,9 +141,14 @@ type BodySubTab = 'pretty' | 'raw' | 'preview';
 interface BodyDisplayProps {
   response: HttpResponseDef;
   searchTerm: string;
+  caseSensitive: boolean;
 }
 
-const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisplayProps): React.ReactElement {
+const BodyDisplay = memo(function BodyDisplay({
+  response,
+  searchTerm,
+  caseSensitive,
+}: BodyDisplayProps): React.ReactElement {
   const { body, bodySize, headers, truncated, bodyRef } = response;
   const contentType = headers['content-type'] ?? headers['Content-Type'] ?? '';
 
@@ -290,8 +308,9 @@ const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisp
         isJson && prettyJson !== null ? (
           <pre
             className="rv-body-pre rv-json"
-            // eslint-disable-next-line react/no-danger -- intentional syntax highlight
-            dangerouslySetInnerHTML={{ __html: applySearchHighlightHtml(highlightJson(prettyJson), searchTerm) }}
+            dangerouslySetInnerHTML={{
+              __html: applySearchHighlightHtml(highlightJson(prettyJson), searchTerm, caseSensitive),
+            }}
             aria-label="Response body (JSON)"
           />
         ) : (
@@ -299,7 +318,11 @@ const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisp
             className={`rv-body-pre${isHtml || isXml ? ' rv-body-pre--markup' : ''}`}
             aria-label="Response body"
           >
-            <PlainTextWithHighlight text={displayBody} term={searchTerm} />
+            <PlainTextWithHighlight
+              text={displayBody}
+              term={searchTerm}
+              caseSensitive={caseSensitive}
+            />
           </pre>
         )
       )}
@@ -314,7 +337,6 @@ const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisp
       {/* Preview tab — sandboxed HTML render */}
       {activeSubTab === 'preview' && showPreviewTab && (
         <div className="rv-body-preview">
-          {/* eslint-disable-next-line react/iframe-missing-sandbox -- sandbox is explicitly set */}
           <iframe
             className="rv-body-preview__frame"
             srcDoc={displayBody}
@@ -334,17 +356,36 @@ const BodyDisplay = memo(function BodyDisplay({ response, searchTerm }: BodyDisp
 
 interface HeadersTableProps {
   headers: Record<string, string>;
+  searchTerm: string;
+  caseSensitive: boolean;
 }
 
-const HeadersTable = memo(function HeadersTable({ headers }: HeadersTableProps): React.ReactElement {
+const HeadersTable = memo(function HeadersTable({
+  headers,
+  searchTerm,
+  caseSensitive,
+}: HeadersTableProps): React.ReactElement {
   const sorted = useMemo(
     () =>
       Object.entries(headers).sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase())),
     [headers],
   );
 
+  // When searching, hide rows whose key+value contain no match — keeps the
+  // table focused on what's relevant for the current search.
+  const filtered = useMemo(() => {
+    if (!searchTerm) return sorted;
+    const cmp = caseSensitive
+      ? (s: string, t: string): boolean => s.includes(t)
+      : (s: string, t: string): boolean => s.toLowerCase().includes(t.toLowerCase());
+    return sorted.filter(([k, v]) => cmp(`${k}\n${v}`, searchTerm));
+  }, [sorted, searchTerm, caseSensitive]);
+
   if (sorted.length === 0) {
     return <div className="rv-empty-hint">No response headers</div>;
+  }
+  if (filtered.length === 0 && searchTerm) {
+    return <div className="rv-empty-hint">No headers match “{searchTerm}”</div>;
   }
 
   return (
@@ -356,7 +397,7 @@ const HeadersTable = memo(function HeadersTable({ headers }: HeadersTableProps):
         </tr>
       </thead>
       <tbody>
-        {sorted.map(([key, value]) => (
+        {filtered.map(([key, value]) => (
           <tr key={key}>
             <td className="rv-header-key">{key}</td>
             <td className="rv-header-value">{value}</td>
@@ -446,39 +487,119 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
   const activeTab = useResponseStore((s) => s.activeTab);
   const setActiveTab = useResponseStore((s) => s.setActiveTab);
 
-  // Search state (F-03)
+  // Search state (F-03) — `searchVisible` controls the bar; currentMatchIndex
+  // tracks which `<mark>` is highlighted for Enter/Shift+Enter navigation.
   const [searchTerm, setSearchTerm] = useState('');
+  const [caseSensitive, setCaseSensitive] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const bodyContainerRef = useRef<HTMLDivElement>(null);
+  const headersContainerRef = useRef<HTMLDivElement>(null);
 
   const headerCount = response ? Object.keys(response.headers).length : 0;
 
-  const matchCount = useMemo(() => {
-    if (!searchTerm || !response) return 0;
-    return countMatches(response.body, searchTerm);
-  }, [searchTerm, response]);
+  const searchText = useMemo(() => {
+    if (!response) return '';
+    if (activeTab === 'headers') {
+      return Object.entries(response.headers)
+        .map(([k, v]) => `${k}\n${v}`)
+        .join('\n');
+    }
+    return response.body;
+  }, [response, activeTab]);
 
-  // Ctrl+F inside the body panel opens the search bar
-  const handleBodyKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-      e.preventDefault();
-      setSearchVisible(true);
-      setTimeout(() => searchInputRef.current?.focus(), 50);
-    }
-    if (e.key === 'Escape') {
-      setSearchTerm('');
-      setSearchVisible(false);
-    }
+  const matchCount = useMemo(() => {
+    if (!searchTerm || !searchText) return 0;
+    return countMatches(searchText, searchTerm, caseSensitive);
+  }, [searchTerm, searchText, caseSensitive]);
+
+  const closeSearch = useCallback(() => {
+    setSearchVisible(false);
+    setCurrentMatchIndex(0);
   }, []);
 
-  // Clear search when switching tabs
-  const handleTabSwitch = useCallback((tab: 'body' | 'headers' | 'timing') => {
-    setActiveTab(tab);
-    if (tab !== 'body') {
-      setSearchTerm('');
-      setSearchVisible(false);
+  const openSearch = useCallback(() => {
+    setSearchVisible(true);
+    setCurrentMatchIndex(0);
+    setTimeout(() => searchInputRef.current?.select(), 0);
+  }, []);
+
+  // Document-level Ctrl+F / Cmd+F — fires regardless of which element inside
+  // the webview currently has focus, so the shortcut always works as users
+  // expect from VS Code / browsers.
+  useEffect(() => {
+    if (!response) return;
+    const handler = (e: KeyboardEvent): void => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key === 'f') {
+        e.preventDefault();
+        openSearch();
+      } else if (e.key === 'Escape' && searchVisible) {
+        const target = e.target as HTMLElement | null;
+        // Only steal Escape when the search input has focus
+        if (
+          target === searchInputRef.current ||
+          (target && target.closest('.rv-search'))
+        ) {
+          e.preventDefault();
+          closeSearch();
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [response, searchVisible, openSearch, closeSearch]);
+
+  const goToMatch = useCallback(
+    (direction: 'next' | 'prev') => {
+      if (matchCount === 0) return;
+      setCurrentMatchIndex((prev) => {
+        if (direction === 'next') {
+          return prev >= matchCount - 1 ? 0 : prev + 1;
+        }
+        return prev <= 0 ? matchCount - 1 : prev - 1;
+      });
+    },
+    [matchCount],
+  );
+
+  // After `currentMatchIndex` changes, scroll the active <mark> into view and
+  // apply the active class. We use DOM walking rather than React reconciliation
+  // so we don't have to thread the index through every highlight component.
+  useEffect(() => {
+    if (matchCount === 0) {
+      bodyContainerRef.current
+        ?.querySelectorAll('mark.rv-search-mark--active')
+        .forEach((el) => el.classList.remove('rv-search-mark--active'));
+      return;
     }
-  }, [setActiveTab]);
+    const root =
+      activeTab === 'headers' ? headersContainerRef.current : bodyContainerRef.current;
+    if (!root) return;
+    const marks = Array.from(root.querySelectorAll('mark.rv-search-mark'));
+    if (marks.length === 0) return;
+    marks.forEach((el) => el.classList.remove('rv-search-mark--active'));
+    const el = marks[currentMatchIndex];
+    if (el) {
+      el.classList.add('rv-search-mark--active');
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [currentMatchIndex, matchCount, activeTab, searchTerm, caseSensitive]);
+
+  // Reset index when the term or tab changes
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+  }, [searchTerm, caseSensitive, activeTab]);
+
+  // Clear search when switching tabs
+  const handleTabSwitch = useCallback(
+    (tab: 'body' | 'headers' | 'timing') => {
+      setActiveTab(tab);
+      if (tab === 'timing') closeSearch();
+    },
+    [setActiveTab, closeSearch],
+  );
 
   // ---- States ----
   if (status === 'idle') {
@@ -567,6 +688,20 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
         >
           Timing
         </button>
+        <button
+          type="button"
+          className={`rv-tab rv-tab--search${searchVisible ? ' rv-tab--active' : ''}`}
+          onClick={() => {
+            if (searchVisible || searchTerm) closeSearch();
+            else openSearch();
+          }}
+          aria-label="Search in response (Ctrl+F)"
+          aria-pressed={searchVisible}
+          title="Search (Ctrl+F)"
+          disabled={activeTab === 'timing'}
+        >
+          🔍
+        </button>
       </div>
 
       {/* Panel content */}
@@ -577,11 +712,11 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
           aria-label="Response body"
           hidden={activeTab !== 'body'}
           className="rv-panel"
-          onKeyDown={activeTab === 'body' ? handleBodyKeyDown : undefined}
+          ref={bodyContainerRef}
         >
-          {/* Search bar (F-03) — visible when Ctrl+F or when searchVisible */}
+          {/* Search bar — visible when Ctrl+F was pressed or a term is set */}
           {(searchVisible || searchTerm) && (
-            <div className="rv-search" role="search" aria-label="Search in response body">
+            <div className="rv-search" role="search" aria-label="Search in response">
               <input
                 ref={searchInputRef}
                 type="text"
@@ -590,37 +725,75 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
-                    setSearchTerm('');
-                    setSearchVisible(false);
+                    e.preventDefault();
+                    closeSearch();
+                    return;
+                  }
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    goToMatch(e.shiftKey ? 'prev' : 'next');
                   }
                 }}
-                placeholder="Search in response…"
-                aria-label="Search response body"
+                placeholder={`Search in ${activeTab === 'headers' ? 'headers' : 'response'}…`}
+                aria-label="Search response"
                 autoComplete="off"
                 spellCheck={false}
               />
               {searchTerm && (
                 <span className="rv-search__count" aria-live="polite">
-                  {matchCount === 0 ? 'No matches' : `${matchCount} match${matchCount !== 1 ? 'es' : ''}`}
+                  {matchCount === 0
+                    ? 'No matches'
+                    : `${currentMatchIndex + 1} / ${matchCount}`}
                 </span>
               )}
               <button
                 type="button"
-                className="rv-action-btn"
-                onClick={() => { setSearchTerm(''); setSearchVisible(false); }}
-                aria-label="Close search"
+                className="rv-search__btn"
+                onClick={() => goToMatch('prev')}
+                disabled={matchCount === 0}
+                aria-label="Previous match (Shift+Enter)"
+                title="Previous match (Shift+Enter)"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="rv-search__btn"
+                onClick={() => goToMatch('next')}
+                disabled={matchCount === 0}
+                aria-label="Next match (Enter)"
+                title="Next match (Enter)"
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                className={`rv-search__btn rv-search__btn--toggle${
+                  caseSensitive ? ' rv-search__btn--active' : ''
+                }`}
+                onClick={() => setCaseSensitive((s) => !s)}
+                aria-label="Match case"
+                aria-pressed={caseSensitive}
+                title="Match case"
+              >
+                Aa
+              </button>
+              <button
+                type="button"
+                className="rv-search__btn"
+                onClick={closeSearch}
+                aria-label="Close search (Esc)"
                 title="Close (Esc)"
               >
                 ✕
               </button>
             </div>
           )}
-          {!searchVisible && !searchTerm && (
-            <div className="rv-search-hint" aria-hidden="true">
-              {/* Ctrl+F hint is implicit — no persistent UI clutter */}
-            </div>
-          )}
-          <BodyDisplay response={response} searchTerm={searchTerm} />
+          <BodyDisplay
+            response={response}
+            searchTerm={searchTerm}
+            caseSensitive={caseSensitive}
+          />
         </div>
 
         <div
@@ -629,8 +802,13 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
           aria-label="Response headers"
           hidden={activeTab !== 'headers'}
           className="rv-panel"
+          ref={headersContainerRef}
         >
-          <HeadersTable headers={response.headers} />
+          <HeadersTable
+            headers={response.headers}
+            searchTerm={searchTerm}
+            caseSensitive={caseSensitive}
+          />
         </div>
 
         <div

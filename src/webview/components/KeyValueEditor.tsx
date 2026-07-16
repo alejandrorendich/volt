@@ -273,7 +273,7 @@ export const KeyValueEditor = memo(function KeyValueEditor({
       for (const r of rows) {
         if (r.key.trim() !== '') onRemove(r.id);
       }
-      for (const _p of parsed) {
+      for (let i = 0; i < parsed.length; i++) {
         onAdd();
       }
       // eslint-disable-next-line no-console -- dev-mode bulk workaround signal

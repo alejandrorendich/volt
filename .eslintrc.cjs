@@ -16,7 +16,7 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 2020,
     sourceType: 'module',
-    project: ['./tsconfig.extension.json', './tsconfig.webview.json'],
+    project: ['./src/extension/tsconfig.json', './src/webview/tsconfig.json'],
   },
   overrides: [
     // Extension host — CJS, no DOM

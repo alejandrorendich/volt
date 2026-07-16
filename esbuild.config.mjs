@@ -13,6 +13,15 @@ if (!existsSync(entryPoint)) {
   process.exit(0);
 }
 
+/**
+ * Runtime dependencies that must be loaded via Node's `require()` at runtime
+ * instead of being bundled. They are listed under `dependencies` in
+ * `package.json`, so `vsce package` ships them alongside the extension and
+ * Node's standard resolution finds them at runtime — bypassing Yarn PnP
+ * interference that breaks bundling in some local environments.
+ */
+const RUNTIME_EXTERNALS = ['vscode', 'js-yaml', 'undici', 'ajv', 'ajv-formats'];
+
 /** @type {esbuild.BuildOptions} */
 const options = {
   entryPoints: [entryPoint],
@@ -23,7 +32,7 @@ const options = {
   format: 'cjs',
   sourcemap: true,
   minify: !isWatch,
-  external: ['vscode'],
+  external: RUNTIME_EXTERNALS,
   define: {
     'process.env.NODE_ENV': isWatch ? '"development"' : '"production"',
   },

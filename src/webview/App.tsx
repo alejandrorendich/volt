@@ -18,6 +18,7 @@ import { WebSocketPanel } from './components/WebSocketPanel';
 import { SsePanel } from './components/SsePanel';
 import { useMessage, postMessageToHost } from './hooks/useMessage';
 import { useSaveRequest } from './hooks/useSaveRequest';
+import { useUnsavedWarning } from './hooks/useUnsavedWarning';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useRequestStore } from './stores/request-store';
 import { useResponseStore } from './stores/response-store';
@@ -90,6 +91,12 @@ function useMessageRouter(): void {
 
         case 'event:environment-changed':
           envStore.setEnv(msg.payload);
+          break;
+
+        case 'event:new-request':
+          // Open a fresh tab (savePath null) so the user can fill the form
+          // and Save will then prompt for a path/folder.
+          requestStore.addTab();
           break;
 
         case 'event:load-request':
@@ -256,8 +263,12 @@ export function App(): React.ReactElement {
   // Route host messages to stores
   useMessageRouter();
 
-  // Autosave + Ctrl+S
+  // Manual save (Ctrl+S)
   useSaveRequest();
+
+  // Notify host about dirty state so the panel title shows a modified marker
+  // and the host can warn the user if they close with unsaved changes.
+  useUnsavedWarning();
 
   // Global keyboard shortcuts (Ctrl+Enter, Ctrl+L, Ctrl+D)
   const handleGlobalSend = useCallback(() => {
@@ -303,7 +314,7 @@ export function App(): React.ReactElement {
     e.preventDefault();
     dragging.current = true;
 
-    const onMouseMove = (ev: MouseEvent) => {
+    const onMouseMove = (ev: MouseEvent): void => {
       if (!dragging.current || !splitRef.current) return;
       const rect = splitRef.current.getBoundingClientRect();
       const pct = ((ev.clientX - rect.left) / rect.width) * 100;
@@ -311,7 +322,7 @@ export function App(): React.ReactElement {
       setBuilderWidth(clamped);
     };
 
-    const onMouseUp = () => {
+    const onMouseUp = (): void => {
       dragging.current = false;
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);

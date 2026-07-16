@@ -244,9 +244,10 @@ export class ScriptRunner {
     try {
       // Build async function with context variables as parameters (H-09)
       // AsyncFunction supports await inside user scripts.
-      const AsyncFunction = Object.getPrototypeOf(async function () {
+      const AsyncFunction = (Object.getPrototypeOf(async function () {
         // empty
-      }).constructor as new (...args: string[]) => (...values: unknown[]) => Promise<unknown>;
+      }) as { constructor: new (...args: string[]) => (...values: unknown[]) => Promise<unknown> })
+        .constructor;
 
       const contextWithPm = { ...context, pm };
       const paramNames = Object.keys(contextWithPm);

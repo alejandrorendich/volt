@@ -26,7 +26,12 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import type { IHttpService } from '../message-router';
-import type { HttpRequestDef, HttpResponseDef, TimingBreakdown } from '../../shared/models';
+import type {
+  HttpRequestDef,
+  HttpResponseDef,
+  TimingBreakdown,
+  TimingPhase,
+} from '../../shared/models';
 import type { CorrelationId, ExecuteErrorCode } from '../../shared/protocol';
 import * as vscode from 'vscode';
 
@@ -94,7 +99,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
   async execute(
     requestDef: HttpRequestDef,
     correlationId: CorrelationId,
-    onProgress?: (phase: import('../../shared/models').TimingPhase, elapsed: number) => void,
+    onProgress?: (phase: TimingPhase, elapsed: number) => void,
     options: HttpRequestOptions = {},
   ): Promise<HttpResponseDef> {
     const result = await this.executeWithResult(requestDef, correlationId, onProgress, options);
@@ -110,7 +115,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
   async executeWithResult(
     requestDef: HttpRequestDef,
     correlationId: CorrelationId,
-    onProgress?: (phase: import('../../shared/models').TimingPhase, elapsed: number) => void,
+    onProgress?: (phase: TimingPhase, elapsed: number) => void,
     options: HttpRequestOptions = {},
   ): Promise<HttpExecuteResult> {
     const {
@@ -122,7 +127,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
     } = options;
 
     // Per-request timeout override from the request definition
-    const timeoutMs = requestDef.timeout != null ? requestDef.timeout : optionsTimeoutMs;
+    const timeoutMs = requestDef.timeout !== null && requestDef.timeout !== undefined ? requestDef.timeout : optionsTimeoutMs;
 
     // Per-request redirect override from settings
     const followRedirects =

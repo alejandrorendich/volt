@@ -16,10 +16,11 @@
  *   captured after each response.
  */
 
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 import type { IHttpService, ICollectionService, IEnvironmentService } from '../message-router';
 import type { RunnerProgressMessage, RunnerCompleteMessage } from '../../shared/protocol';
 import type { CookieService } from './cookie-service';
+import type { CollectionRequestItem, CollectionTreeNode } from '../../shared/models';
 
 // ---------------------------------------------------------------------------
 // Callback types
@@ -216,10 +217,10 @@ export class CollectionRunner {
  * Only processes the top-level children (non-recursive for Sprint 3).
  */
 function collectRequestPaths(
-  nodes: readonly import('../../shared/models').CollectionTreeNode[],
+  nodes: readonly CollectionTreeNode[],
 ): string[] {
   return nodes
-    .filter((n): n is import('../../shared/models').CollectionRequestItem => n.kind === 'request')
+    .filter((n): n is CollectionRequestItem => n.kind === 'request')
     .map((n) => n.path)
     .sort();
 }

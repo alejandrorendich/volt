@@ -13,6 +13,7 @@
 import React, { useCallback, useEffect, useId, useRef, memo, useState } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import type { KVRow } from './KeyValueEditor';
 import { useRequestStore } from '../stores/request-store';
 import type { RequestState } from '../stores/request-store';
 import type { HeaderRow } from '../stores/request-store';
@@ -60,6 +61,293 @@ const BODY_TYPE_LABELS: Record<RequestBody['type'], string> = {
   binary: 'Binary',
   graphql: 'GraphQL',
 };
+
+// ---------------------------------------------------------------------------
+// Body type conversion
+// ---------------------------------------------------------------------------
+
+type FormDataRowLike = { id: string; key: string; value: string; enabled: boolean };
+
+interface ConversionResult {
+  nextBody: RequestBody;
+  /** Optional replacement for formDataRows (used when crossing text ↔ form-data). */
+  nextFormRows?: FormDataRowLike[];
+}
+
+/** Lightweight ID generator matching the store's `generateId` strategy. */
+function makeId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * Convert a body between types while preserving user content where possible.
+ *
+ * Strategy:
+ *   - json ↔ text         → keep `content` (text is text)
+ *   - form-data → text    → serialise rows as `key=value\n...`
+ *   - text → form-data    → parse `content` as `key=value\n...` and rebuild rows
+ *   - graphql → text      → render `{ query, variables, operationName }` as multiline block
+ *   - text → graphql      → parse the multiline block back into the three fields
+ *   - graphql → json      → keep the query as content
+ *   - binary ↔ *          → reset (no textual equivalent)
+ *   - json/form-data → graphql → reset (fields don't align)
+ *   - none → *            → empty (initial behaviour)
+ */
+function convertBody(
+  current: RequestBody,
+  target: RequestBody['type'],
+  formDataRows: readonly FormDataRowLike[],
+): ConversionResult {
+  // ----- None -----
+  if (current.type === 'none') {
+    if (target === 'none') return { nextBody: { type: 'none' } };
+    if (target === 'binary') return { nextBody: { type: 'binary', filePath: '' } };
+    if (target === 'graphql') return { nextBody: { type: 'graphql', query: '', variables: '{}', operationName: '' } };
+    if (target === 'form-data') return { nextBody: { type: 'form-data', content: '' } };
+    return { nextBody: { type: target, content: '' } };
+  }
+
+  // ----- Binary → no textual equivalent -----
+  if (current.type === 'binary') {
+    if (target === 'binary') return { nextBody: current };
+    // Reset everything else
+    if (target === 'graphql') return { nextBody: { type: 'graphql', query: '', variables: '{}', operationName: '' } };
+    if (target === 'form-data') return { nextBody: { type: 'form-data', content: '' } };
+    if (target === 'none') return { nextBody: { type: 'none' } };
+    return { nextBody: { type: target, content: '' } };
+  }
+
+  if (target === 'binary') {
+    // Preserve filePath if coming from another binary; otherwise start empty
+    return { nextBody: { type: 'binary', filePath: '' } };
+  }
+
+  // ----- JSON ↔ Text -----
+  if ((current.type === 'json' || current.type === 'text') && (target === 'json' || target === 'text')) {
+    return { nextBody: { type: target, content: current.content } };
+  }
+
+  // ----- Form-Data → Text (serialise rows as key=value\n...) -----
+  if (current.type === 'form-data' && target === 'text') {
+    const content = formDataRows
+      .filter((r) => r.enabled && r.key.trim() !== '')
+      .map((r) => `${r.key.trim()}=${r.value}`)
+      .join('\n');
+    return { nextBody: { type: 'text', content } };
+  }
+
+  // ----- JSON → Form-Data (extract top-level keys as fields) -----
+  if (current.type === 'json' && target === 'form-data') {
+    const rows = parseJsonAsFormData(current.content) ?? [];
+    return {
+      nextBody: { type: 'form-data', content: current.content },
+      nextFormRows: rows,
+    };
+  }
+
+  // ----- Text → Form-Data (try JSON first, then key=value) -----
+  if (current.type === 'text' && target === 'form-data') {
+    // Try JSON first (common case when coming from JSON → Text → Form-Data)
+    const jsonRows = parseJsonAsFormData(current.content);
+    if (jsonRows !== null) {
+      return {
+        nextBody: { type: 'form-data', content: current.content },
+        nextFormRows: jsonRows,
+      };
+    }
+    // Fallback: parse as key=value\n...
+    const rows = parseFormDataText(current.content);
+    return {
+      nextBody: { type: 'form-data', content: current.content },
+      nextFormRows: rows,
+    };
+  }
+
+  // ----- Form-Data → JSON (wrap rows as JSON object if all values are strings) -----
+  if (current.type === 'form-data' && target === 'json') {
+    const content = serialiseFormDataAsJson(formDataRows);
+    return { nextBody: { type: 'json', content } };
+  }
+
+  // ----- JSON → GraphQL: reset -----
+  if (current.type === 'json' && target === 'graphql') {
+    return { nextBody: { type: 'graphql', query: '', variables: '{}', operationName: '' } };
+  }
+
+  // ----- GraphQL → Text (render as multiline block) -----
+  if (current.type === 'graphql' && target === 'text') {
+    return { nextBody: { type: 'text', content: serializeGraphqlToText(current) } };
+  }
+
+  // ----- GraphQL → JSON (use query as content) -----
+  if (current.type === 'graphql' && target === 'json') {
+    return { nextBody: { type: 'json', content: current.query } };
+  }
+
+  // ----- Text → GraphQL (parse multiline block back) -----
+  if (current.type === 'text' && target === 'graphql') {
+    return { nextBody: parseGraphqlFromText(current.content) };
+  }
+
+  // ----- GraphQL → Form-Data: reset -----
+  if (current.type === 'graphql' && target === 'form-data') {
+    return { nextBody: { type: 'form-data', content: '' } };
+  }
+
+  // ----- Fallback: reset -----
+  if (target === 'none') return { nextBody: { type: 'none' } };
+  if (target === 'graphql') return { nextBody: { type: 'graphql', query: '', variables: '{}', operationName: '' } };
+  if (target === 'form-data') return { nextBody: { type: 'form-data', content: '' } };
+  return { nextBody: { type: target, content: '' } };
+}
+
+/**
+ * Serialise a GraphQL body as a readable multiline text block.
+ * The format is round-trippable via `parseGraphqlFromText`.
+ */
+function serializeGraphqlToText(g: { query: string; variables: string; operationName: string }): string {
+  const parts: string[] = [];
+  parts.push(g.query.trim());
+  if (g.variables && g.variables.trim() !== '' && g.variables.trim() !== '{}') {
+    parts.push('');
+    parts.push('// variables');
+    parts.push(g.variables);
+  }
+  if (g.operationName && g.operationName.trim() !== '') {
+    parts.push('');
+    parts.push('// operationName');
+    parts.push(g.operationName);
+  }
+  return parts.join('\n');
+}
+
+/**
+ * Parse a multiline text block produced by `serializeGraphqlToText` back into
+ * a GraphQL body. Falls back to putting the whole content in `query` if the
+ * format is unrecognised.
+ */
+function parseGraphqlFromText(content: string): RequestBody {
+  const lines = content.split('\n');
+  const queryLines: string[] = [];
+  let variables = '{}';
+  let operationName = '';
+  let section: 'query' | 'variables' | 'operationName' = 'query';
+  const variablesBuf: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '// variables') {
+      section = 'variables';
+      continue;
+    }
+    if (trimmed === '// operationName') {
+      // Flush whatever variables we have collected
+      variables = variablesBuf.join('\n').trim() || '{}';
+      section = 'operationName';
+      continue;
+    }
+    if (section === 'query') {
+      queryLines.push(line);
+    } else if (section === 'variables') {
+      variablesBuf.push(line);
+    } else if (section === 'operationName') {
+      if (operationName === '' && trimmed !== '') {
+        operationName = trimmed;
+      }
+    }
+  }
+  // If we exited in 'variables' section without seeing operationName
+  if (section === 'variables') {
+    variables = variablesBuf.join('\n').trim() || '{}';
+  }
+
+  const query = queryLines.join('\n').trim();
+  return {
+    type: 'graphql',
+    query,
+    variables,
+    operationName,
+  };
+}
+
+/**
+ * Parse `key=value\n...` text into form-data rows. Lines without `=` are
+ * ignored (with the whole line treated as a key with empty value).
+ */
+function parseFormDataText(content: string): FormDataRowLike[] {
+  const rows: FormDataRowLike[] = [];
+  for (const line of content.split('\n')) {
+    if (line.trim() === '') continue;
+    const eqIdx = line.indexOf('=');
+    if (eqIdx === -1) {
+      rows.push({ id: makeId(), key: line.trim(), value: '', enabled: true });
+    } else {
+      rows.push({
+        id: makeId(),
+        key: line.slice(0, eqIdx).trim(),
+        value: line.slice(eqIdx + 1),
+        enabled: true,
+      });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Try to parse content as a JSON object and extract top-level keys as form-data rows.
+ * Returns `null` if content is not a valid JSON object.
+ *
+ * Examples:
+ *   { "user": "ale", "age": 30 }   → [{ user, ale }, { age, 30 }]
+ *   { "user": { "name": "a" } }    → [{ user, {"name":"a"} }]
+ *   [1, 2, 3]                      → null (arrays are not objects)
+ *   "hello"                        → null
+ *   { "user": "ale" } bad          → null
+ */
+function parseJsonAsFormData(content: string): FormDataRowLike[] | null {
+  const trimmed = content.trim();
+  if (trimmed === '') return null;
+  // Must look like an object before attempting parse — avoids throwing on garbage
+  if (trimmed[0] !== '{') return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length === 0) return [];
+  return entries.map(([key, value]) => ({
+    id: makeId(),
+    key,
+    value:
+      value === null
+        ? ''
+        : typeof value === 'object'
+          ? JSON.stringify(value)
+          : typeof value === 'string'
+            ? value
+            : String(value),
+    enabled: true,
+  }));
+}
+
+/**
+ * Serialise form-data rows as a JSON object string. Used when going
+ * form-data → JSON. Stringifies values verbatim.
+ */
+function serialiseFormDataAsJson(rows: readonly FormDataRowLike[]): string {
+  const obj: Record<string, string> = {};
+  for (const r of rows) {
+    if (r.enabled && r.key.trim() !== '') {
+      obj[r.key.trim()] = r.value;
+    }
+  }
+  return JSON.stringify(obj, null, 2);
+}
 
 // ---------------------------------------------------------------------------
 // HistorySparkline — SVG polyline of response times
@@ -488,30 +776,13 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
   const addFormRow = useRequestStore((s) => s.addFormRow);
   const updateFormRow = useRequestStore((s) => s.updateFormRow);
   const removeFormRow = useRequestStore((s) => s.removeFormRow);
+  const replaceFormRows = useRequestStore((s) => s.replaceFormRows);
+  const lastNonNoneBody = useRequestStore((s) => s.lastNonNoneBody);
 
   const bodyDisabled = BODY_DISABLED_METHODS.includes(method);
   const bodyTextareaId = useId();
 
   const [jsonError, setJsonError] = React.useState<string | null>(null);
-
-  const handleTypeChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const t = e.target.value as RequestBody['type'];
-      if (t === 'none') {
-        setBody({ type: 'none' });
-      } else if (t === 'form-data') {
-        setBody({ type: 'form-data', content: '' });
-      } else if (t === 'binary') {
-        setBody({ type: 'binary', filePath: '' });
-      } else if (t === 'graphql') {
-        setBody({ type: 'graphql', query: '', variables: '{}', operationName: '' });
-      } else {
-        setBody({ type: t as 'json' | 'text', content: (body as { content?: string }).content ?? '' });
-      }
-      setJsonError(null);
-    },
-    [body, setBody],
-  );
 
   const handleContentChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -551,10 +822,13 @@ const BodyEditor = memo(function BodyEditor({ method }: BodyEditorProps): React.
             type="button"
             className={`rb-body-type-btn${body.type === t ? ' rb-body-type-btn--active' : ''}`}
             onClick={() => {
-              if (t === 'none') setBody({ type: 'none' });
-              else if (t === 'binary') setBody({ type: 'binary', filePath: (body as { filePath?: string }).filePath ?? '' });
-              else if (t === 'graphql') setBody({ type: 'graphql', query: '', variables: '{}', operationName: '' });
-              else setBody({ type: t as 'json' | 'text' | 'form-data', content: '' });
+              if (t === body.type) return; // No-op if already active
+              // If we're restoring from 'none', use the saved body as the
+              // effective source so the previous content is preserved.
+              const source = body.type === 'none' && lastNonNoneBody ? lastNonNoneBody : body;
+              const { nextBody, nextFormRows } = convertBody(source, t, formDataRows);
+              setBody(nextBody);
+              if (nextFormRows) replaceFormRows(nextFormRows);
             }}
             aria-pressed={body.type === t}
           >
@@ -841,7 +1115,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
 
   // Bulk-replace adapters for KeyValueEditor (convert KVRow[] ↔ store types)
   const handleBulkReplaceHeaders = useCallback(
-    (rows: import('./KeyValueEditor').KVRow[]) => {
+    (rows: KVRow[]) => {
       const headerRows: HeaderRow[] = rows.map((r) => ({
         id: r.id,
         key: r.key,
@@ -854,7 +1128,7 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
   );
 
   const handleBulkReplaceParams = useCallback(
-    (rows: import('./KeyValueEditor').KVRow[]) => {
+    (rows: KVRow[]) => {
       replaceParams(rows.map((r) => ({ key: r.key, value: r.value, enabled: r.enabled })));
     },
     [replaceParams],
@@ -868,7 +1142,6 @@ export const RequestBuilder = memo(function RequestBuilder(): React.ReactElement
 
   const wsStatus = useWsStore((s) => s.status);
   const wsSetConnecting = useWsStore((s) => s.setConnecting);
-  const wsReset = useWsStore((s) => s.reset);
   const sseStartStreaming = useSseStore((s) => s.startStreaming);
 
   const { send } = useMessage();

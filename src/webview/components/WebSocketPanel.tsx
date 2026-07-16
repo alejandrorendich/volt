@@ -48,7 +48,6 @@ export function WebSocketPanel({ initialUrl = '', headers = {} }: WebSocketPanel
   const closeReason = useWsStore((s) => s.closeReason);
   const setConnecting = useWsStore((s) => s.setConnecting);
   const clearMessages = useWsStore((s) => s.clearMessages);
-  const reset = useWsStore((s) => s.reset);
 
   const [url, setUrl] = useState(initialUrl);
   const [messageText, setMessageText] = useState('');
@@ -131,12 +130,6 @@ export function WebSocketPanel({ initialUrl = '', headers = {} }: WebSocketPanel
   const handleClear = useCallback(() => {
     clearMessages();
   }, [clearMessages]);
-
-  const handleReset = useCallback(() => {
-    reset();
-    setUrl('');
-    setMessageText('');
-  }, [reset]);
 
   // ---------------------------------------------------------------------------
   // Status indicator text + class

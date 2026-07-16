@@ -11,7 +11,15 @@
  */
 
 import { create } from 'zustand';
-import type { HttpMethod, RequestBody, QueryParam, AuthConfig, AssertionRule, AssertionResult } from '../../shared/models';
+import type {
+  HttpMethod,
+  HttpRequestDef,
+  RequestBody,
+  QueryParam,
+  AuthConfig,
+  AssertionRule,
+  AssertionResult,
+} from '../../shared/models';
 
 // ---------------------------------------------------------------------------
 // Header row (with enabled toggle)
@@ -136,6 +144,14 @@ export interface RequestState {
   // Script error feedback
   /** Non-null when the last pre/post script execution failed. Cleared on new request. */
   scriptError: { phase: 'pre' | 'post'; message: string } | null;
+
+  /**
+   * Snapshot of the body before it was switched to "none". Used to restore
+   * content when the user toggles None → a real body type. Cleared when the
+   * underlying body is edited directly (so an old None-hidden value never
+   * overwrites new content).
+   */
+  lastNonNoneBody: RequestBody | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +196,7 @@ export interface RequestActions {
   loadRequest: (patch: Partial<Omit<RequestState, 'activeTab' | 'loading' | 'activeCorrelationId' | 'tabs' | 'activeTabId' | 'tabSnapshots' | 'streamingPhase'>>) => void;
 
   /** Build the final HttpRequestDef for sending. */
-  toRequestDef: () => import('../../shared/models').HttpRequestDef;
+  toRequestDef: () => HttpRequestDef;
 
   // SSL verification toggle (F-05)
   setSslVerify: (sslVerify: boolean) => void;
@@ -389,6 +405,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   streamingPhase: null,
   scriptError: null,
   assertionResults: [],
+  lastNonNoneBody: null,
 
   // Actions
   setMethod: (method) => {
@@ -520,7 +537,15 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
 
   setBody: (body) => {
-    set({ body });
+    const prev = get().body;
+    // Track "last non-none body" so we can restore when toggling None → type.
+    // Snapshot only when leaving a real type for 'none'. Don't overwrite a
+    // saved snapshot while still in 'none' (preserves the original restore target).
+    let lastNonNoneBody = get().lastNonNoneBody;
+    if (body.type === 'none' && prev.type !== 'none') {
+      lastNonNoneBody = prev;
+    }
+    set({ body, lastNonNoneBody });
     get().markDirty();
   },
 
@@ -536,7 +561,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   loadRequest: (patch) =>
     set((s) => {
       const baseUrl = patch.url ? parseUrlParams(patch.url).baseUrl : s.baseUrl;
-      const newMethod = (patch.method as HttpMethod | undefined) ?? s.method;
+      const newMethod = (patch.method) ?? s.method;
       const newUrl = patch.url ?? s.url;
       const newName = patch.name ?? s.name;
       // Update the active tab name to reflect the loaded request

@@ -286,8 +286,8 @@ function convertBody(rawBody: unknown): RequestBody | undefined {
     const pairs: string[] = [];
     for (const entry of body.formdata) {
       if (!isObject(entry)) continue;
-      const k = asString((entry as Record<string, unknown>)['key']);
-      const v = asString((entry as Record<string, unknown>)['value']);
+      const k = asString((entry)['key']);
+      const v = asString((entry)['value']);
       if (k !== undefined) {
         pairs.push(`${k}=${v ?? ''}`);
       }

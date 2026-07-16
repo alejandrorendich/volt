@@ -15,12 +15,17 @@
  */
 
 import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 
 // ---------------------------------------------------------------------------
 // Ajv instance
 // ---------------------------------------------------------------------------
 
 const ajv = new Ajv({ allErrors: true, strict: false });
+// Register standard format validators (date-time, uri, email, etc.).
+// AJV 8 split these out of core; without this, `format: 'date-time'` is
+// silently ignored and emits an `unknown format` warning at compile time.
+addFormats(ajv);
 
 // ---------------------------------------------------------------------------
 // Request YAML schema

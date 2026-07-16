@@ -16,7 +16,7 @@
 
 import { WebSocket } from 'undici';
 import type { WsMessage } from '../../shared/models';
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 
 // ---------------------------------------------------------------------------
 // Callback signatures
