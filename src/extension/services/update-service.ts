@@ -1,13 +1,14 @@
 /**
  * @fileoverview Volt Update Service.
  *
- * Checks GitHub Releases for a newer version of Volt and offers to install it.
+ * Checks GitHub Releases for a newer version of Volt and auto-installs it.
  *
  * Design decisions:
  * - Uses Node's built-in `https` module — no extra runtime dependencies.
  * - Runs once on activation, then re-checks every 6h while VS Code is open.
- * - Persists the last notified version in `globalState` so the user is not
- *   re-prompted for the same release after restarting VS Code.
+ * - Fully automatic: when a newer release is detected, the .vsix is downloaded
+ *   and installed without user intervention, then the window reloads. No
+ *   "Update / Later" prompt.
  * - Non-blocking: `checkForUpdates` and `startBackgroundChecks` are
  *   fire-and-forget from `activate`.
  * - All network and parse errors are logged to the `Volt` output channel —
@@ -32,8 +33,6 @@ const GITHUB_API_URL = 'https://api.github.com/repos/alejandrorendich/volt/relea
 const API_TIMEOUT_MS = 5_000;
 /** Re-check interval while VS Code stays open. */
 const BACKGROUND_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
-/** `globalState` key for the last version we showed the update prompt for. */
-const LAST_NOTIFIED_KEY = 'volt.updateService.lastNotifiedVersion';
 
 // ---------------------------------------------------------------------------
 // UpdateService
@@ -69,16 +68,14 @@ export type UpdateEvent = UpdateEventAvailable | UpdateEventUpToDate | UpdateEve
 export class UpdateService {
   private readonly currentVersion: string;
   private readonly output: vscode.OutputChannel;
-  private readonly globalState: vscode.Memento;
   /** Prevents overlapping API calls within a single session. */
   private inflight = false;
   /** Subscribed UI listeners (status bar, etc.) — fire on every check outcome. */
   private listeners: Array<(event: UpdateEvent) => void> = [];
 
-  constructor(output: vscode.OutputChannel, currentVersion: string, globalState: vscode.Memento) {
+  constructor(output: vscode.OutputChannel, currentVersion: string) {
     this.output = output;
     this.currentVersion = currentVersion;
-    this.globalState = globalState;
   }
 
   // ---------------------------------------------------------------------------
@@ -166,23 +163,8 @@ export class UpdateService {
         return;
       }
 
-      const lastNotified = this.globalState.get<string>(LAST_NOTIFIED_KEY);
-      if (!options.force && lastNotified === latest.version) {
-        this.output.appendLine(
-          `[Volt] Update check: v${latest.version} already announced; skipping prompt`,
-        );
-        // Still 'available' from a strict-semver standpoint — UI shows the
-        // pending update so users can re-trigger via the manual command.
-        this.emit({
-          kind: 'available',
-          version: latest.version,
-          installedVersion: this.currentVersion,
-        });
-        return;
-      }
-
       this.output.appendLine(
-        `[Volt] Update available: v${latest.version} (installed: v${this.currentVersion})`,
+        `[Volt] Update available: v${latest.version} (installed: v${this.currentVersion}) — auto-installing…`,
       );
       this.emit({
         kind: 'available',
@@ -190,19 +172,18 @@ export class UpdateService {
         installedVersion: this.currentVersion,
       });
 
-      const choice = await vscode.window.showInformationMessage(
-        `Volt v${latest.version} is available (you have v${this.currentVersion}). Update now?`,
-        'Update',
-        'Later',
-      );
-
-      // Persist as soon as the prompt is shown — user has seen the toast, so
-      // we shouldn't re-announce the same version on every restart. The manual
-      // command (force=true) can always re-show the prompt on demand.
-      await this.globalState.update(LAST_NOTIFIED_KEY, latest.version);
-
-      if (choice === 'Update') {
+      // Auto-install the update. No prompt — the user opted into auto-update
+      // by installing a Volt that ships with one. If install fails, log to the
+      // Output channel and surface a non-blocking notification; the user can
+      // still trigger a manual retry via volt.checkForUpdates.
+      try {
         await this.installUpdate(latest.vsixUrl, latest.version);
+      } catch (installErr: unknown) {
+        const msg = installErr instanceof Error ? installErr.message : String(installErr);
+        this.output.appendLine(`[Volt] Auto-install failed: ${msg}`);
+        void vscode.window.showErrorMessage(
+          `Volt auto-update to v${latest.version} failed: ${msg}. Run "Volt: Check for Updates" to retry.`,
+        );
       }
     } catch (err: unknown) {
       this.output.appendLine(
@@ -268,8 +249,9 @@ export class UpdateService {
   }
 
   /**
-   * Download the .vsix from `vsixUrl` to a temp file, then install it via the
-   * VS Code extension host and offer a window reload.
+   * Download the .vsix from `vsixUrl` to a temp file, install it via the VS
+   * Code extension host, and trigger a window reload so the new code takes
+   * over immediately. No user prompt — fully automatic.
    */
   private async installUpdate(vsixUrl: string, newVersion: string): Promise<void> {
     const tempFile = path.join(os.tmpdir(), `volt-${newVersion}.vsix`);
@@ -282,16 +264,18 @@ export class UpdateService {
 
     await vscode.commands.executeCommand('workbench.extensions.installExtension', vsixUri);
 
-    this.output.appendLine(`[Volt] Installed v${newVersion}`);
+    this.output.appendLine(`[Volt] Installed v${newVersion} — reloading window…`);
 
-    const action = await vscode.window.showInformationMessage(
-      `Volt updated to v${newVersion}. Reload VS Code to apply.`,
-      'Reload Now',
-    );
+    // Briefly surface what just happened before VS Code reloads and clears
+    // the notification. The user gets a one-shot confirmation without having
+    // to click anything. 1.2s is enough to read "Volt updated to vX.Y.Z" but
+    // short enough not to delay them noticeably.
+    void vscode.window
+      .showInformationMessage(`Volt updated to v${newVersion}. Reloading…`)
+      .then(() => undefined);
+    await new Promise<void>((resolve) => setTimeout(resolve, 1200));
 
-    if (action === 'Reload Now') {
-      await vscode.commands.executeCommand('workbench.action.reloadWindow');
-    }
+    await vscode.commands.executeCommand('workbench.action.reloadWindow');
   }
 
   /**

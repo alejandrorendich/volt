@@ -967,7 +967,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const currentVersion = String(
     (context.extension.packageJSON as { version?: string }).version ?? '0.0.0',
   );
-  const updateService = new UpdateService(output, currentVersion, context.globalState);
+  const updateService = new UpdateService(output, currentVersion);
   context.subscriptions.push(updateService.startBackgroundChecks());
 
   // 10a. Version status bar item — visible at all times so users always know

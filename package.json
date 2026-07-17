@@ -2,7 +2,7 @@
   "name": "volt",
   "displayName": "Volt",
   "description": "Fast, free HTTP client for VS Code",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "publisher": "volt-dev",
   "license": "MIT",
   "author": {

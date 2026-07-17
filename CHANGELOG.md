@@ -10,6 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.6] - 2026-07-17
+
+### Changed
+
+- **Auto-update is now fully automatic** — when GitHub Releases has a newer
+  version, `UpdateService` downloads and installs the .vsix without any
+  user prompt, then reloads the window. The previous "Update / Later" dialog
+  has been removed.
+- **Install error path is loud, not silent** — if the download or install
+  fails, a non-blocking error toast is shown with a hint to retry via
+  `Volt: Check for Updates`, and the full error is logged to `Output → Volt`.
+
+### Internal
+
+- Removed the `LAST_NOTIFIED_KEY` globalState suppression. With auto-install
+  every detected newer version is installed immediately; if the installed
+  version still doesn't match, that's a real failure that the user needs to
+  see, not a re-prompt to suppress.
+
+---
+
 ## [0.8.5] - 2026-07-17
 
 ### Added
