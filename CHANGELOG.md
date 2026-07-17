@@ -10,6 +10,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.3] - 2026-07-17
+
+### Fixed
+- **Auto-update reliability** — bumped package version so existing
+  installations on **0.8.x** can detect a newer release through the
+  GitHub Releases startup check. No behavioural changes.
+
+---
+
+## [0.8.0] - 2026-07-16
+
+### Added
+- **Body type round-trip conversion** — switch between `None`, `JSON`,
+  `Text`, `Form Data` and `GraphQL` without losing payload content.
+- **Unsaved-changes indicator** — panel title shows `●` when the active
+  request has pending edits; closing with pending changes prompts first.
+- **Enhanced response search** — case toggle (`Aa`), navigate matches
+  with `Enter` / `Shift+Enter`, match counter, header filtering, and a
+  dedicated search button in the response tabs bar.
+- **Per-request Notes tab** — Markdown editor + preview with `Edited`
+  relative-time and autosave.
+- **Workspace-aware sidebar** — toolbar buttons only render when a
+  folder is open.
+- **Improved error feedback** — failed commands surface a notification
+  and a structured `Output → Volt` line.
+- **New host ↔ webview protocol messages** — `webview:set-dirty` and
+  `event:new-request`.
+- **PnP bypass plugin for esbuild** — fixes dependency resolution when
+  a stale `.pnp.cjs` is found in an ancestor directory.
+
+---
+
 ## [0.7.0] - 2026-07-01
 
 ### Added
