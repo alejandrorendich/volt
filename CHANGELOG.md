@@ -10,9 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.5] - 2026-07-17
+
+### Added
+
+- **Always-visible version status bar item** — a new entry at the bottom-right
+  reads `$(tag) Volt v0.8.5` and is clickable. Solves the "I can't tell which
+  Volt is installed" problem.
+- **Status bar reflects auto-update state in real time:**
+  - `$(tag) Volt v0.8.5` — installed and up to date (tooltip: latest from GitHub)
+  - `$(cloud-download) Update v0.8.6` — newer release found; clicking triggers
+    the prompt
+  - `$(alert) Volt v0.8.5` — check failed (network/rate-limit/malformed payload);
+    clicking retries
+- **`UpdateService.onUpdate(listener)` event hook** — emits
+  `{ kind: 'available' | 'up-to-date' | 'failed' }` events after every check.
+  Activate.ts subscribes the status bar; future UI (toast, banner) can subscribe
+  the same way without touching the service.
+
+---
+
 ## [0.8.4] - 2026-07-17
 
 ### Fixed
+
 - **Auto-update actually fires on startup** — added `onStartupFinished`
   to `activationEvents` so `activate()` runs on every VS Code startup,
   regardless of whether the workspace contains `.volt/collection.yaml`
@@ -30,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   full stack instead of being swallowed.
 
 ### Added
+
 - **Manual command `Volt: Check for Updates`** — registered as
   `volt.checkForUpdates`. Bypasses the "already notified" suppression
   via `{ force: true }` so users can re-trigger the prompt on demand.
@@ -39,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   without the VS Code runtime.
 
 ### Internal
+
 - Pure helpers (`parseReleaseInfo`, `isNewerVersion`) extracted from
   `update-service.ts` into `release-utils.ts` to keep `vscode`
   dependencies out of the unit-test surface.
@@ -48,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.8.3] - 2026-07-17
 
 ### Fixed
+
 - **Auto-update reliability** — bumped package version so existing
   installations on **0.8.x** can detect a newer release through the
   GitHub Releases startup check. No behavioural changes.
@@ -57,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.8.0] - 2026-07-16
 
 ### Added
+
 - **Body type round-trip conversion** — switch between `None`, `JSON`,
   `Text`, `Form Data` and `GraphQL` without losing payload content.
 - **Unsaved-changes indicator** — panel title shows `●` when the active
@@ -80,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.7.0] - 2026-07-01
 
 ### Added
+
 - **Request Notes** — new dedicated "Notes" tab in the request builder,
   backed by a persistent `notes` field on each request.
   - Markdown editor with **Edit / Preview** mode toggle.
@@ -91,16 +117,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     the rest of the request metadata.
 
 ### Changed
+
 - Request schema (`src/shared/schemas.ts`, `src/shared/models.ts`) now
   declares `notes` + `notesUpdatedAt` as first-class fields.
   Collection load/save round-trips them through `collection-service.ts`.
 
 ### Backwards Compatibility
+
 - Existing collections using the legacy `description` field on a request
   continue to load — the loader transparently maps `description → notes`
   on read and writes the modern key back on save.
 
 ### Security
+
 - Markdown rendering is constrained by the webview **CSP** (`https:`
   for remote resources) so external images/scripts injected via Notes
   cannot break out of the sandbox.

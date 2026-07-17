@@ -48,17 +48,70 @@ export interface CheckForUpdatesOptions {
   readonly force?: boolean;
 }
 
+export interface UpdateEventAvailable {
+  readonly kind: 'available';
+  readonly version: string;
+  readonly installedVersion: string;
+}
+
+export interface UpdateEventUpToDate {
+  readonly kind: 'up-to-date';
+  readonly version: string;
+}
+
+export interface UpdateEventFailed {
+  readonly kind: 'failed';
+  readonly error: unknown;
+}
+
+export type UpdateEvent = UpdateEventAvailable | UpdateEventUpToDate | UpdateEventFailed;
+
 export class UpdateService {
   private readonly currentVersion: string;
   private readonly output: vscode.OutputChannel;
   private readonly globalState: vscode.Memento;
   /** Prevents overlapping API calls within a single session. */
   private inflight = false;
+  /** Subscribed UI listeners (status bar, etc.) — fire on every check outcome. */
+  private listeners: Array<(event: UpdateEvent) => void> = [];
 
   constructor(output: vscode.OutputChannel, currentVersion: string, globalState: vscode.Memento) {
     this.output = output;
     this.currentVersion = currentVersion;
     this.globalState = globalState;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event subscription
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Subscribe to check lifecycle events. Fires:
+   * - `{ kind: 'available', version, installedVersion }` when a newer release is found
+   * - `{ kind: 'up-to-date', version }` when no newer release exists
+   * - `{ kind: 'failed', error }` when the GitHub API call or parse throws
+   *
+   * Returns a `Disposable` that removes the listener. Force-bypassed checks
+   * (the manual `volt.checkForUpdates` command) fire the same events so the
+   * status bar stays accurate after a manual refresh.
+   */
+  onUpdate(listener: (event: UpdateEvent) => void): vscode.Disposable {
+    this.listeners.push(listener);
+    return new vscode.Disposable(() => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    });
+  }
+
+  private emit(event: UpdateEvent): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        this.output.appendLine(
+          `[Volt] Update listener threw: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -101,6 +154,7 @@ export class UpdateService {
       const latest = await this.fetchLatestRelease();
       if (!latest) {
         this.output.appendLine('[Volt] Update check: no usable release info from GitHub API');
+        this.emit({ kind: 'failed', error: new Error('no usable release info from GitHub API') });
         return;
       }
 
@@ -108,6 +162,7 @@ export class UpdateService {
         this.output.appendLine(
           `[Volt] Update check: latest is v${latest.version}, installed is v${this.currentVersion} (up to date)`,
         );
+        this.emit({ kind: 'up-to-date', version: latest.version });
         return;
       }
 
@@ -116,12 +171,24 @@ export class UpdateService {
         this.output.appendLine(
           `[Volt] Update check: v${latest.version} already announced; skipping prompt`,
         );
+        // Still 'available' from a strict-semver standpoint — UI shows the
+        // pending update so users can re-trigger via the manual command.
+        this.emit({
+          kind: 'available',
+          version: latest.version,
+          installedVersion: this.currentVersion,
+        });
         return;
       }
 
       this.output.appendLine(
         `[Volt] Update available: v${latest.version} (installed: v${this.currentVersion})`,
       );
+      this.emit({
+        kind: 'available',
+        version: latest.version,
+        installedVersion: this.currentVersion,
+      });
 
       const choice = await vscode.window.showInformationMessage(
         `Volt v${latest.version} is available (you have v${this.currentVersion}). Update now?`,
@@ -143,6 +210,7 @@ export class UpdateService {
           err instanceof Error ? (err.stack ?? err.message) : String(err)
         }`,
       );
+      this.emit({ kind: 'failed', error: err });
     } finally {
       this.inflight = false;
     }

@@ -964,12 +964,41 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 10. Update check — runs once on activation, then every 6h while VS Code
   //     is open. The Disposable clears the interval on extension teardown.
-  const updateService = new UpdateService(
-    output,
-    String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
-    context.globalState,
+  const currentVersion = String(
+    (context.extension.packageJSON as { version?: string }).version ?? '0.0.0',
   );
+  const updateService = new UpdateService(output, currentVersion, context.globalState);
   context.subscriptions.push(updateService.startBackgroundChecks());
+
+  // 10a. Version status bar item — visible at all times so users always know
+  //      which Volt they have, and so the auto-update is observable.
+  //      When the check finds a newer release the item becomes
+  //      "$(cloud-download) Update available v0.8.x" and clicking it re-runs
+  //      the manual check (which bypasses the "already announced" guard).
+  const versionStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+  versionStatusBar.text = `$(tag) Volt v${currentVersion}`;
+  versionStatusBar.tooltip = `Volt v${currentVersion} — checking for updates…`;
+  versionStatusBar.command = 'volt.checkForUpdates';
+  versionStatusBar.show();
+  context.subscriptions.push(versionStatusBar);
+
+  context.subscriptions.push(
+    updateService.onUpdate((event) => {
+      if (event.kind === 'available') {
+        versionStatusBar.text = `$(cloud-download) Update v${event.version}`;
+        versionStatusBar.tooltip = `Volt v${event.installedVersion} → v${event.version} available. Click to update.`;
+        versionStatusBar.command = 'volt.checkForUpdates';
+      } else if (event.kind === 'up-to-date') {
+        versionStatusBar.text = `$(tag) Volt v${currentVersion}`;
+        versionStatusBar.tooltip = `Volt v${currentVersion} — up to date with GitHub Releases (latest: v${event.version})`;
+        versionStatusBar.command = 'volt.checkForUpdates';
+      } else {
+        versionStatusBar.text = `$(alert) Volt v${currentVersion}`;
+        versionStatusBar.tooltip = `Volt v${currentVersion} — could not reach GitHub Releases. Click to retry.`;
+        versionStatusBar.command = 'volt.checkForUpdates';
+      }
+    }),
+  );
 
   // 10b. Manual command — force a fresh update check regardless of whether
   //      the user already dismissed the prompt for the current release.
