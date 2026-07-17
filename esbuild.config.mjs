@@ -3,6 +3,8 @@ import * as esbuild from 'esbuild';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
+import { createRequire } from 'module';
+import { builtinModules } from 'module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isWatch = process.argv.includes('--watch');
@@ -13,14 +15,38 @@ if (!existsSync(entryPoint)) {
   process.exit(0);
 }
 
+const NODE_BUILTINS = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
+
 /**
- * Runtime dependencies that must be loaded via Node's `require()` at runtime
- * instead of being bundled. They are listed under `dependencies` in
- * `package.json`, so `vsce package` ships them alongside the extension and
- * Node's standard resolution finds them at runtime — bypassing Yarn PnP
- * interference that breaks bundling in some local environments.
+ * Resolve bare module specifiers directly against this project's
+ * `node_modules/`, bypassing any ambient `.pnp.cjs` Yarn Plug'n'Play
+ * manifest found in ancestor directories (e.g. a stale one in the
+ * developer's home).
+ *
+ * esbuild's auto-detected PnP resolver blocks standard `node_modules`
+ * resolution; this plugin short-circuits it for every dependency
+ * (including transitive ones like ajv's `fast-deep-equal`).
+ *
+ * Node built-ins and `vscode` are passed through unchanged.
  */
-const RUNTIME_EXTERNALS = ['vscode', 'js-yaml', 'undici', 'ajv', 'ajv-formats'];
+const pnpBypassPlugin = {
+  name: 'volt-pnp-bypass',
+  setup(/** @type {esbuild.PluginBuild} */ build) {
+    const filter = /^[^./]/;
+    build.onResolve({ filter }, (/** @type {esbuild.OnResolveArgs} */ args) => {
+      if (args.path === 'vscode' || NODE_BUILTINS.has(args.path)) return undefined;
+      const slash = args.path.indexOf('/');
+      const pkgName = slash === -1 ? args.path : args.path.slice(0, slash);
+      const pkgDir = resolve(__dirname, 'node_modules', pkgName);
+      try {
+        const req = createRequire(resolve(pkgDir, 'package.json'));
+        return { path: req.resolve(args.path) };
+      } catch {
+        return undefined;
+      }
+    });
+  },
+};
 
 /** @type {esbuild.BuildOptions} */
 const options = {
@@ -32,7 +58,8 @@ const options = {
   format: 'cjs',
   sourcemap: true,
   minify: !isWatch,
-  external: RUNTIME_EXTERNALS,
+  external: ['vscode'],
+  plugins: [pnpBypassPlugin],
   define: {
     'process.env.NODE_ENV': isWatch ? '"development"' : '"production"',
   },
