@@ -10,6 +10,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.4] - 2026-07-17
+
+### Fixed
+- **Auto-update actually fires on startup** — added `onStartupFinished`
+  to `activationEvents` so `activate()` runs on every VS Code startup,
+  regardless of whether the workspace contains `.volt/collection.yaml`
+  or the Volt sidebar is open. Previously, sideloaded installations
+  on workspaces without a collection never triggered the update check.
+- **Periodic re-checks while VS Code is open** — `UpdateService` now
+  re-queries GitHub Releases every 6 hours via `setInterval`, so a
+  release published during a long session is detected without a
+  restart. The interval is cleared on extension teardown.
+- **No more re-prompts for the same release** — the last notified
+  version is persisted in `context.globalState`; the toast is shown
+  once per release, not on every restart.
+- **Update errors are no longer silent** — network failures, rate
+  limits, and malformed API payloads now log to `Output → Volt` with
+  full stack instead of being swallowed.
+
+### Added
+- **Manual command `Volt: Check for Updates`** — registered as
+  `volt.checkForUpdates`. Bypasses the "already notified" suppression
+  via `{ force: true }` so users can re-trigger the prompt on demand.
+- **Tests for `parseReleaseInfo` and `isNewerVersion`** — 20 unit
+  tests in `src/extension/services/update-service.test.ts`. Pure
+  helpers extracted to `release-utils.ts` so they can be tested
+  without the VS Code runtime.
+
+### Internal
+- Pure helpers (`parseReleaseInfo`, `isNewerVersion`) extracted from
+  `update-service.ts` into `release-utils.ts` to keep `vscode`
+  dependencies out of the unit-test surface.
+
+---
+
 ## [0.8.3] - 2026-07-17
 
 ### Fixed

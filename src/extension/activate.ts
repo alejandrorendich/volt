@@ -56,7 +56,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
   if (!workspaceRoot) {
-    output.appendLine('[Volt] No workspace folder open — collection and environment features disabled.');
+    output.appendLine(
+      '[Volt] No workspace folder open — collection and environment features disabled.',
+    );
     void vscode.window.showWarningMessage(
       'Volt: Open a folder to save requests and use environments.',
     );
@@ -103,15 +105,18 @@ export function activate(context: vscode.ExtensionContext): void {
   if (environmentService) {
     const envSvc = environmentService;
     envSvc.onDidChange = () => {
-      envSvc.getResolved().then((resolved) => {
-        router.send({
-          type: 'event:environment-changed',
-          correlationId: `env-watch-${Date.now()}`,
-          payload: resolved,
+      envSvc
+        .getResolved()
+        .then((resolved) => {
+          router.send({
+            type: 'event:environment-changed',
+            correlationId: `env-watch-${Date.now()}`,
+            payload: resolved,
+          });
+        })
+        .catch((err: unknown) => {
+          output.appendLine(`[Volt] ERROR pushing env change to webview: ${String(err)}`);
         });
-      }).catch((err: unknown) => {
-        output.appendLine(`[Volt] ERROR pushing env change to webview: ${String(err)}`);
-      });
     };
   }
 
@@ -197,7 +202,8 @@ export function activate(context: vscode.ExtensionContext): void {
         placeHolder: 'e.g. dev, staging, prod',
         validateInput: (value) => {
           if (!value) return 'Name is required';
-          if (!/^[a-zA-Z0-9_-]+$/.test(value)) return 'Only letters, numbers, hyphens and underscores';
+          if (!/^[a-zA-Z0-9_-]+$/.test(value))
+            return 'Only letters, numbers, hyphens and underscores';
           return undefined;
         },
       });
@@ -268,9 +274,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('volt.newRequestInFolder', async (item: unknown) => {
       output.appendLine('[Volt] Command: volt.newRequestInFolder');
       if (!collectionService) return;
-      const folderName = item && typeof item === 'object' && 'label' in item
-        ? String((item as { label: unknown }).label)
-        : '';
+      const folderName =
+        item && typeof item === 'object' && 'label' in item
+          ? String((item as { label: unknown }).label)
+          : '';
       // Auto-generate a unique name
       const baseName = 'new-request';
       let name = baseName;
@@ -293,7 +300,7 @@ export function activate(context: vscode.ExtensionContext): void {
         name,
         method: 'GET',
         url: '',
-        headers: { 'Content-Type': 'application/json', 'Accept': '*/*' },
+        headers: { 'Content-Type': 'application/json', Accept: '*/*' },
         queryParams: [],
       });
       treeProvider.refresh();
@@ -423,7 +430,9 @@ export function activate(context: vscode.ExtensionContext): void {
       output.appendLine('[Volt] Command: volt.importPostman');
 
       if (!collectionService || !environmentService) {
-        void vscode.window.showWarningMessage('Volt: Open a folder to import a Postman collection.');
+        void vscode.window.showWarningMessage(
+          'Volt: Open a folder to import a Postman collection.',
+        );
         return;
       }
 
@@ -451,8 +460,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
         await vscode.window.showInformationMessage(
           `Volt: Imported ${result.requests} request${result.requests !== 1 ? 's' : ''}, ` +
-          `${result.folders} folder${result.folders !== 1 ? 's' : ''}, ` +
-          `${result.variables} variable${result.variables !== 1 ? 's' : ''}.`,
+            `${result.folders} folder${result.folders !== 1 ? 's' : ''}, ` +
+            `${result.variables} variable${result.variables !== 1 ? 's' : ''}.`,
         );
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -523,9 +532,7 @@ export function activate(context: vscode.ExtensionContext): void {
         await collectionService.createFolder(copyFolder);
         // Load all requests from the source folder and save to the copy
         const tree = await collectionService.loadTree();
-        const folderNode = tree.nodes.find(
-          (n) => n.kind === 'folder' && n.name === folderName,
-        );
+        const folderNode = tree.nodes.find((n) => n.kind === 'folder' && n.name === folderName);
         if (folderNode && folderNode.kind === 'folder') {
           for (const child of folderNode.children) {
             if (child.kind === 'request') {
@@ -666,9 +673,7 @@ export function activate(context: vscode.ExtensionContext): void {
       } else {
         // Command palette: ask the user to pick a folder
         const tree = await collectionService.loadTree();
-        const folders = tree.nodes
-          .filter((n) => n.kind === 'folder')
-          .map((n) => n.name);
+        const folders = tree.nodes.filter((n) => n.kind === 'folder').map((n) => n.name);
 
         if (folders.length === 0) {
           void vscode.window.showWarningMessage('Volt: No folders found in the collection.');
@@ -747,7 +752,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const baseUrl = baseUrlInput.trim() || `{{baseUrl}}/api/${resource}`;
 
-      const defaultHeaders = { 'Content-Type': 'application/json', 'Accept': '*/*' };
+      const defaultHeaders = { 'Content-Type': 'application/json', Accept: '*/*' };
 
       type ScaffoldEntry = {
         name: string;
@@ -758,11 +763,41 @@ export function activate(context: vscode.ExtensionContext): void {
       };
 
       const scaffoldRequests: ScaffoldEntry[] = [
-        { name: `List ${resource}`,      relPath: `${resource}/list`,      method: 'GET',    url: baseUrl,          hasBody: false },
-        { name: `Get ${resource} by ID`, relPath: `${resource}/get-by-id`, method: 'GET',    url: `${baseUrl}/:id`, hasBody: false },
-        { name: `Create ${resource}`,    relPath: `${resource}/create`,    method: 'POST',   url: baseUrl,          hasBody: true  },
-        { name: `Update ${resource}`,    relPath: `${resource}/update`,    method: 'PUT',    url: `${baseUrl}/:id`, hasBody: true  },
-        { name: `Delete ${resource}`,    relPath: `${resource}/delete`,    method: 'DELETE', url: `${baseUrl}/:id`, hasBody: false },
+        {
+          name: `List ${resource}`,
+          relPath: `${resource}/list`,
+          method: 'GET',
+          url: baseUrl,
+          hasBody: false,
+        },
+        {
+          name: `Get ${resource} by ID`,
+          relPath: `${resource}/get-by-id`,
+          method: 'GET',
+          url: `${baseUrl}/:id`,
+          hasBody: false,
+        },
+        {
+          name: `Create ${resource}`,
+          relPath: `${resource}/create`,
+          method: 'POST',
+          url: baseUrl,
+          hasBody: true,
+        },
+        {
+          name: `Update ${resource}`,
+          relPath: `${resource}/update`,
+          method: 'PUT',
+          url: `${baseUrl}/:id`,
+          hasBody: true,
+        },
+        {
+          name: `Delete ${resource}`,
+          relPath: `${resource}/delete`,
+          method: 'DELETE',
+          url: `${baseUrl}/:id`,
+          hasBody: false,
+        },
       ];
 
       try {
@@ -806,13 +841,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const clipboardText = await vscode.env.clipboard.readText();
       if (!clipboardText.trim()) {
-        await vscode.window.showErrorMessage('Volt: Clipboard is empty. Copy a cURL command first.');
+        await vscode.window.showErrorMessage(
+          'Volt: Clipboard is empty. Copy a cURL command first.',
+        );
         return;
       }
 
       const parsed = parseCurl(clipboardText.trim());
       if (!parsed) {
-        await vscode.window.showErrorMessage('Volt: Could not parse cURL from clipboard. Make sure you copied a valid cURL command.');
+        await vscode.window.showErrorMessage(
+          'Volt: Could not parse cURL from clipboard. Make sure you copied a valid cURL command.',
+        );
         return;
       }
 
@@ -857,10 +896,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // 7a. Status bar item — shows active environment; clicking opens env switcher
-  const statusBarItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    100,
-  );
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = '$(zap) Volt';
   statusBarItem.tooltip = 'Volt: No environment active — click to switch';
   statusBarItem.command = 'volt.switchEnvironment';
@@ -870,15 +906,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // Refresh status bar text whenever the active environment changes
   const updateStatusBar = (): void => {
     if (!environmentService) return;
-    environmentService.getResolved().then((env) => {
-      if (env.active) {
-        statusBarItem.text = `$(zap) Volt: ${env.active}`;
-        statusBarItem.tooltip = `Volt active environment: ${env.active} — click to switch`;
-      } else {
-        statusBarItem.text = '$(zap) Volt';
-        statusBarItem.tooltip = 'Volt: No environment active — click to switch';
-      }
-    }).catch(() => { /* ignore errors in status bar update */ });
+    environmentService
+      .getResolved()
+      .then((env) => {
+        if (env.active) {
+          statusBarItem.text = `$(zap) Volt: ${env.active}`;
+          statusBarItem.tooltip = `Volt active environment: ${env.active} — click to switch`;
+        } else {
+          statusBarItem.text = '$(zap) Volt';
+          statusBarItem.tooltip = 'Volt: No environment active — click to switch';
+        }
+      })
+      .catch(() => {
+        /* ignore errors in status bar update */
+      });
   };
 
   // Immediate callback from the router on env switch (fired from webview UI)
@@ -911,7 +952,7 @@ export function activate(context: vscode.ExtensionContext): void {
   //    them to the Volt output channel rather than silently swallowing them
   //    (REQ-MSG-002 — graceful crash recovery).
   const rejectionHandler = (reason: unknown): void => {
-    const msg = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+    const msg = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason);
     output.appendLine(`[Volt] Unhandled rejection: ${msg}`);
   };
   process.on('unhandledRejection', rejectionHandler);
@@ -921,12 +962,22 @@ export function activate(context: vscode.ExtensionContext): void {
 
   output.appendLine('[Volt] Activated successfully');
 
-  // 10. Update check — non-blocking, once per session (fire-and-forget)
+  // 10. Update check — runs once on activation, then every 6h while VS Code
+  //     is open. The Disposable clears the interval on extension teardown.
   const updateService = new UpdateService(
     output,
     String((context.extension.packageJSON as { version?: string }).version ?? '0.0.0'),
+    context.globalState,
   );
-  void updateService.checkForUpdates();
+  context.subscriptions.push(updateService.startBackgroundChecks());
+
+  // 10b. Manual command — force a fresh update check regardless of whether
+  //      the user already dismissed the prompt for the current release.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('volt.checkForUpdates', () => {
+      void updateService.checkForUpdates({ force: true });
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------

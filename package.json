@@ -2,7 +2,7 @@
   "name": "volt",
   "displayName": "Volt",
   "description": "Fast, free HTTP client for VS Code",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "publisher": "volt-dev",
   "license": "MIT",
   "author": {
@@ -32,6 +32,7 @@
     "requests"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "workspaceContains:.volt/collection.yaml",
     "onCommand:volt.newRequest",
     "onCommand:volt.openCollection",
@@ -52,6 +53,7 @@
     "onCommand:volt.clearCookies",
     "onCommand:volt.createCrudScaffold",
     "onCommand:volt.importCurl",
+    "onCommand:volt.checkForUpdates",
     "onView:volt.collectionTree"
   ],
   "main": "./dist/extension.js",
@@ -202,6 +204,12 @@
         "title": "Import from cURL (Clipboard)",
         "category": "Volt",
         "icon": "$(terminal-bash)"
+      },
+      {
+        "command": "volt.checkForUpdates",
+        "title": "Check for Updates",
+        "category": "Volt",
+        "icon": "$(sync)"
       }
     ],
     "keybindings": [

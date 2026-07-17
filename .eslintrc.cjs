@@ -30,6 +30,13 @@ module.exports = {
         '@typescript-eslint/no-var-requires': 'off',
       },
     },
+    // Extension host — test files (include .test.ts, which the main tsconfig excludes)
+    {
+      files: ['src/extension/**/*.test.ts'],
+      parserOptions: {
+        project: './src/extension/tsconfig.test.json',
+      },
+    },
     // Webview — ESM, DOM
     {
       files: ['src/webview/**/*.{ts,tsx}'],
