@@ -25,6 +25,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
+import { bodyRefFor } from './body-ref-utils';
 import type { IHttpService } from '../message-router';
 import type {
   HttpRequestDef,
@@ -228,7 +229,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
         try {
           const tmpFile = path.join(os.tmpdir(), `volt-resp-${correlationId}.txt`);
           await fs.writeFile(tmpFile, bodyString, 'utf8');
-          bodyRef = `file:///${tmpFile.replace(/\\/g, '/')}`;
+          bodyRef = bodyRefFor(tmpFile);
           finalBody = '';
           this.output.appendLine(`[HttpService] Large body (${bodySize} bytes) offloaded to ${tmpFile}`);
         } catch (fsErr: unknown) {

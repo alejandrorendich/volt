@@ -21,6 +21,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isFileUri } from './services/body-ref-utils';
 import type {
   HostMessage,
   WebviewMessage,
@@ -1189,30 +1190,53 @@ export class MessageRouter implements vscode.Disposable {
   /**
    * Open a native save dialog and write content to the chosen file.
    * Used by the webview "Save full response" action (REQ-RV-005).
-   * When `content` is a file:// URI or an absolute path to an existing file
-   * (large body offloaded to temp — H-07), the file is read and its contents
-   * are written instead of the path string.
+   * When `content` is a file:// URI (large body offloaded to temp — H-07),
+   * the file is read and its contents are written instead of the URI string,
+   * and the temp file is deleted afterwards.
    */
   private async handleSaveToFile(suggestedName: string, content: string): Promise<void> {
     try {
       // H-07: bodyRef case — content may be a file:// URI (large body offloaded to temp)
       let actualContent = content;
-      if (content.startsWith('file:///')) {
-        actualContent = fs.readFileSync(vscode.Uri.parse(content).fsPath, 'utf8');
+      let tempRefPath: string | undefined;
+      if (isFileUri(content)) {
+        tempRefPath = vscode.Uri.parse(content).fsPath;
+        actualContent = fs.readFileSync(tempRefPath, 'utf8');
       }
 
       const uri = await vscode.window.showSaveDialog({
         defaultUri: vscode.Uri.file(suggestedName),
         filters: { 'All Files': ['*'] },
       });
-      if (!uri) return; // User cancelled
+      if (!uri) {
+        // User cancelled — still clean up the temp body file.
+        if (tempRefPath) await this.tryCleanupTemp(tempRefPath);
+        return;
+      }
 
-      await vscode.workspace.fs.writeFile(uri, Buffer.from(actualContent, 'utf8'));
+      try {
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(actualContent, 'utf8'));
+      } finally {
+        if (tempRefPath) await this.tryCleanupTemp(tempRefPath);
+      }
       void vscode.window.showInformationMessage(`Volt: Response saved to ${uri.fsPath}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.output.appendLine(`[MessageRouter] ERROR in save-to-file: ${message}`);
       void vscode.window.showErrorMessage(`Volt: Failed to save file — ${message}`);
+    }
+  }
+
+  /** Best-effort unlink for an offloaded body temp file. Never throws. */
+  private async tryCleanupTemp(tempRefPath: string): Promise<void> {
+    try {
+      await fs.promises.unlink(tempRefPath);
+    } catch (cleanupErr: unknown) {
+      this.output.appendLine(
+        `[MessageRouter] WARN: failed to remove temp body ${tempRefPath}: ${
+          cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
+        }`,
+      );
     }
   }
 
