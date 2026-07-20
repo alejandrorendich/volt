@@ -895,27 +895,78 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewPanelSerializer(PANEL_VIEW_TYPE, webviewProvider),
   );
 
-  // 7a. Status bar item — shows active environment; clicking opens env switcher
+  // 7a. Unified status bar item — shows env + installed version + update state.
+  //      Single button; clicking always opens the env switcher. Update info is
+  //      rendered visually (icon + remote version suffix) but install runs
+  //      through Command Palette → "Volt: Check for Updates".
+  const currentVersion = String(
+    (context.extension.packageJSON as { version?: string }).version ?? '0.0.0',
+  );
+
+  type UpdateState =
+    | { kind: 'idle' }
+    | { kind: 'available'; remoteVersion: string }
+    | { kind: 'up-to-date'; remoteVersion: string }
+    | { kind: 'error' };
+
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBarItem.text = '$(zap) Volt';
-  statusBarItem.tooltip = 'Volt: No environment active — click to switch';
   statusBarItem.command = 'volt.switchEnvironment';
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 
+  let activeEnvName: string | undefined;
+  let updateState: UpdateState = { kind: 'idle' };
+
+  /**
+   * Pure formatter for the unified status bar.
+   *
+   * Extracted from `renderStatusBar` so the discriminated-union narrowing on
+   * `UpdateState` works correctly (TypeScript would otherwise narrow
+   * `updateState` to its initial value across the closure boundary and flag
+   * every `kind === ...` comparison as dead code).
+   */
+  const formatStatusBar = (
+    envName: string | undefined,
+    version: string,
+    state: UpdateState,
+  ): { text: string; tooltip: string } => {
+    const envSuffix = envName ? `: ${envName}` : '';
+    let icon = '$(zap)';
+    let detail = '';
+    let tooltip = envName
+      ? `Volt v${version} — env: ${envName} — click to switch`
+      : `Volt v${version} — click to switch environment`;
+
+    if (state.kind === 'available') {
+      icon = '$(cloud-download)';
+      detail = ` → v${state.remoteVersion}`;
+      tooltip = `Volt v${version} → v${state.remoteVersion} available — click to switch env (run "Volt: Check for Updates" to install)`;
+    } else if (state.kind === 'up-to-date') {
+      tooltip = `Volt v${version} — up to date with GitHub Releases (latest: v${state.remoteVersion})`;
+    } else if (state.kind === 'error') {
+      icon = '$(alert)';
+      tooltip = `Volt v${version} — could not reach GitHub Releases`;
+    }
+
+    return { text: `${icon} Volt${envSuffix} v${version}${detail}`, tooltip };
+  };
+
+  const renderStatusBar = (): void => {
+    const { text, tooltip } = formatStatusBar(activeEnvName, currentVersion, updateState);
+    statusBarItem.text = text;
+    statusBarItem.tooltip = tooltip;
+  };
+
+  renderStatusBar();
+
   // Refresh status bar text whenever the active environment changes
-  const updateStatusBar = (): void => {
+  const refreshEnvFromService = (): void => {
     if (!environmentService) return;
     environmentService
       .getResolved()
       .then((env) => {
-        if (env.active) {
-          statusBarItem.text = `$(zap) Volt: ${env.active}`;
-          statusBarItem.tooltip = `Volt active environment: ${env.active} — click to switch`;
-        } else {
-          statusBarItem.text = '$(zap) Volt';
-          statusBarItem.tooltip = 'Volt: No environment active — click to switch';
-        }
+        activeEnvName = env.active;
+        renderStatusBar();
       })
       .catch(() => {
         /* ignore errors in status bar update */
@@ -924,18 +975,18 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Immediate callback from the router on env switch (fired from webview UI)
   router.onEnvironmentChanged = (envName) => {
-    statusBarItem.text = `$(zap) Volt: ${envName}`;
-    statusBarItem.tooltip = `Volt active environment: ${envName} — click to switch`;
+    activeEnvName = envName;
+    renderStatusBar();
   };
 
   // Initial update (env files may not be loaded yet — use a short delay)
-  setTimeout(updateStatusBar, 500);
+  setTimeout(refreshEnvFromService, 500);
 
   // Re-update whenever collection changes (env might have been created)
   if (collectionService) {
     context.subscriptions.push(
       collectionService.onDidChange(() => {
-        setTimeout(updateStatusBar, 200);
+        setTimeout(refreshEnvFromService, 200);
       }),
     );
   }
@@ -964,39 +1015,22 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 10. Update check — runs once on activation, then every 6h while VS Code
   //     is open. The Disposable clears the interval on extension teardown.
-  const currentVersion = String(
-    (context.extension.packageJSON as { version?: string }).version ?? '0.0.0',
-  );
   const updateService = new UpdateService(output, currentVersion);
   context.subscriptions.push(updateService.startBackgroundChecks());
 
-  // 10a. Version status bar item — visible at all times so users always know
-  //      which Volt they have, and so the auto-update is observable.
-  //      When the check finds a newer release the item becomes
-  //      "$(cloud-download) Update available v0.8.x" and clicking it re-runs
-  //      the manual check (which bypasses the "already announced" guard).
-  const versionStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
-  versionStatusBar.text = `$(tag) Volt v${currentVersion}`;
-  versionStatusBar.tooltip = `Volt v${currentVersion} — checking for updates…`;
-  versionStatusBar.command = 'volt.checkForUpdates';
-  versionStatusBar.show();
-  context.subscriptions.push(versionStatusBar);
-
+  // 10a. Update events drive the unified status bar (see section 7a).
+  //      "volt.checkForUpdates" remains available via Command Palette for
+  //      users who want to install the available release.
   context.subscriptions.push(
     updateService.onUpdate((event) => {
       if (event.kind === 'available') {
-        versionStatusBar.text = `$(cloud-download) Update v${event.version}`;
-        versionStatusBar.tooltip = `Volt v${event.installedVersion} → v${event.version} available. Click to update.`;
-        versionStatusBar.command = 'volt.checkForUpdates';
+        updateState = { kind: 'available', remoteVersion: event.version };
       } else if (event.kind === 'up-to-date') {
-        versionStatusBar.text = `$(tag) Volt v${currentVersion}`;
-        versionStatusBar.tooltip = `Volt v${currentVersion} — up to date with GitHub Releases (latest: v${event.version})`;
-        versionStatusBar.command = 'volt.checkForUpdates';
+        updateState = { kind: 'up-to-date', remoteVersion: event.version };
       } else {
-        versionStatusBar.text = `$(alert) Volt v${currentVersion}`;
-        versionStatusBar.tooltip = `Volt v${currentVersion} — could not reach GitHub Releases. Click to retry.`;
-        versionStatusBar.command = 'volt.checkForUpdates';
+        updateState = { kind: 'error' };
       }
+      renderStatusBar();
     }),
   );
 
