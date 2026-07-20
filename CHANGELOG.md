@@ -10,6 +10,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.7] - 2026-07-20
+
+### Fixed
+
+- **Saving large responses no longer crashes on macOS/Linux** — the offloaded
+  body temp-file URI was being built with a hand-rolled `file:///` +
+  `os.tmpdir()` concatenation, producing `file:////var/folders/...` (four
+  slashes after `file:`). The WHATWG parser rejected it with `UriError:
+  path cannot begin with two slash characters ("//")` whenever the user
+  clicked "save" on a > 5 MB response. The URI is now built via
+  `node:url.pathToFileURL`, which produces a valid `file:///...` on every
+  platform. The offloaded temp file is also deleted after the save (or on
+  cancel), so `os.tmpdir()` no longer accumulates stale `volt-resp-*.txt`
+  files.
+
+### Changed
+
+- **Status bar unified into a single Volt entry** — the previous layout had
+  two adjacent items (`$(zap) Volt: <env>` and `$(tag) Volt vX.Y.Z`) which
+  looked like duplicate buttons and confused users about what clicking did.
+  The version is now appended to the same button — `$(zap) Volt: dev v0.8.7`
+  by default, `$(cloud-download) Volt: dev v0.8.7 → v0.8.8` when an update
+  is available, and `$(alert) Volt: dev v0.8.7` when GitHub Releases is
+  unreachable. Clicking always opens the environment switcher; updates are
+  installed via `Volt: Check for Updates` in the Command Palette.
+
+---
+
 ## [0.8.6] - 2026-07-17
 
 ### Changed
