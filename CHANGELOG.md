@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.9] - 2026-08-11
+
+### Fixed
+
+- **Search bar no longer disappears when navigating matches in large responses** — the search bar was visually hidden by the body panel's overflow when there were 20+ matches. The bar is now rendered outside the scrollable panel area, between the tabs and the panel content, ensuring it remains visible regardless of how many matches exist or how far the body scrolls.
+
+---
+
 ## [0.8.7] - 2026-07-20
 
 ### Fixed
