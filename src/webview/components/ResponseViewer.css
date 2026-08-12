@@ -529,3 +529,103 @@ mark.rv-search-mark.rv-search-mark--active {
 .rv-tab--search.rv-tab--active {
   color: var(--vscode-focusBorder, var(--volt-btn-bg));
 }
+
+/* ---------------------------------------------------------------------------
+ * JSON Tree (REQ-RV-002 collapsible nodes)
+ * --------------------------------------------------------------------------- */
+.rv-tree-wrapper {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.rv-tree {
+  padding: var(--volt-space-3) var(--volt-space-5);
+  font-family: var(--volt-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rv-tree__row {
+  display: flex;
+  align-items: flex-start;
+  min-height: 20px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.rv-tree__node {
+  display: contents;
+}
+
+/* Caret button */
+.rv-tree__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--volt-fg-secondary);
+  font-size: 10px;
+  padding: 0;
+  margin-right: 4px;
+  user-select: none;
+  transition: color 0.1s;
+}
+
+.rv-tree__caret:hover:not(.rv-tree__caret--none) {
+  color: var(--volt-fg-primary);
+}
+
+.rv-tree__caret--none {
+  cursor: default;
+  visibility: hidden;
+}
+
+.rv-tree__caret--collapsed::after {
+  content: '▶';
+  display: block;
+}
+
+.rv-tree__caret--expanded::after {
+  content: '▼';
+  display: block;
+}
+
+/* Key / index */
+.rv-json-key { color: #9cdcfe; }
+.rv-json-number { color: #b5cea8; }
+
+/* Colon and comma */
+.rv-tree__colon {
+  color: var(--volt-fg-secondary);
+  margin-right: 0;
+}
+
+.rv-tree__comma {
+  color: var(--volt-fg-secondary);
+}
+
+/* Leaf value inline */
+.rv-tree__leaf {
+  display: inline;
+}
+
+/* Brackets */
+.rv-tree__bracket {
+  color: var(--volt-fg-secondary);
+}
+
+/* Collapsed summary */
+.rv-tree__collapsed {
+  color: var(--volt-fg-disabled);
+  font-style: italic;
+}
+
+/* Summary block (bracket + collapsed summary) */
+.rv-tree__summary {
+  display: inline;
+}

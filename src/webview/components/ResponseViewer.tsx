@@ -48,49 +48,7 @@ function formatMs(ms: number): string {
 
 const MAX_DISPLAY_BYTES = 1_000_000; // 1 MB display limit
 
-/** Very lightweight JSON syntax highlighter using regex replacement. */
-function highlightJson(json: string): string {
-  return json
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(
-      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
-      (match) => {
-        let cls = 'rv-json-number';
-        if (/^"/.test(match)) {
-          cls = /:$/.test(match) ? 'rv-json-key' : 'rv-json-string';
-        } else if (/true|false/.test(match)) {
-          cls = 'rv-json-bool';
-        } else if (/null/.test(match)) {
-          cls = 'rv-json-null';
-        }
-        return `<span class="${cls}">${match}</span>`;
-      },
-    );
-}
-
-/**
- * Apply search highlight to an HTML string produced by `highlightJson`.
- * Wraps text-node matches with `<mark class="rv-search-mark">`.
- * Operates on the raw HTML — only highlights within text outside `<...>` tags.
- */
-function applySearchHighlightHtml(
-  html: string,
-  term: string,
-  caseSensitive = false,
-): string {
-  if (!term) return html;
-  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const flags = caseSensitive ? 'g' : 'gi';
-  const re = new RegExp(`(${escaped})(?=[^<]*(?:<|$))`, flags);
-  return html.replace(re, '<mark class="rv-search-mark">$1</mark>');
-}
-
-/**
- * Count total occurrences of `term` in `text`.
- * `caseSensitive` toggles case-insensitive (default `false`) matching.
- */
+/** Count total occurrences of `term` in `text`. */
 function countMatches(text: string, term: string, caseSensitive = false): number {
   if (!term) return 0;
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -133,6 +91,229 @@ function PlainTextWithHighlight({
 }
 
 // ---------------------------------------------------------------------------
+// JSON Tree — recursive collapsible renderer
+// ---------------------------------------------------------------------------
+
+interface JsonNodeProps {
+  nodeKey: string | number;
+  value: unknown;
+  path: string;
+  collapsedPaths: Set<string>;
+  onToggle: (path: string) => void;
+  searchTerm: string;
+  caseSensitive: boolean;
+  depth: number;
+  isLast: boolean;
+}
+
+const JsonNode = memo(function JsonNode({
+  nodeKey,
+  value,
+  path,
+  collapsedPaths,
+  onToggle,
+  searchTerm,
+  caseSensitive,
+  depth,
+  isLast,
+}: JsonNodeProps): React.ReactElement {
+  const isObject = typeof value === 'object' && value !== null;
+  const isArray = Array.isArray(value);
+
+  if (!isObject) {
+    const primitiveClass =
+      typeof value === 'string'
+        ? 'rv-json-string'
+        : typeof value === 'number'
+          ? 'rv-json-number'
+          : typeof value === 'boolean'
+            ? 'rv-json-bool'
+            : 'rv-json-null';
+
+    const displayValue =
+      value === null
+        ? 'null'
+        : typeof value === 'string'
+          ? `"${value}"`
+          : String(value);
+
+    return (
+      <div className="rv-tree__row" style={{ paddingLeft: depth * 20 }}>
+        <span className="rv-tree__leaf">
+          {typeof nodeKey === 'number' ? (
+            <span className="rv-json-number">{nodeKey}</span>
+          ) : (
+            <span className="rv-json-key">"{nodeKey}"</span>
+          )}
+          <span className="rv-tree__colon">: </span>
+          <span className={primitiveClass}>
+            <PlainTextWithHighlight
+              text={displayValue}
+              term={searchTerm}
+              caseSensitive={caseSensitive}
+            />
+          </span>
+          {!isLast && <span className="rv-tree__comma">,</span>}
+        </span>
+      </div>
+    );
+  }
+
+  const entries = isArray
+    ? (value as unknown[]).map((v, i) => [i, v] as [number, unknown])
+    : Object.entries(value as Record<string, unknown>);
+
+  const childCount = entries.length;
+  const isEmpty = childCount === 0;
+  const isCollapsed = collapsedPaths.has(path);
+  const showCaret = !isEmpty;
+
+  const summary =
+    isArray
+      ? `[${childCount} item${childCount !== 1 ? 's' : ''}]`
+      : `{${childCount} prop${childCount !== 1 ? 's' : ''}}`;
+
+  return (
+    <div className="rv-tree__node">
+      <div
+        className="rv-tree__row"
+        style={{ paddingLeft: depth * 20 }}
+        data-tree-path={path}
+      >
+        <button
+          type="button"
+          className={`rv-tree__caret${showCaret ? (isCollapsed ? ' rv-tree__caret--collapsed' : ' rv-tree__caret--expanded') : ' rv-tree__caret--none'}`}
+          onClick={() => showCaret && onToggle(path)}
+          aria-expanded={showCaret ? !isCollapsed : undefined}
+          aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+          tabIndex={showCaret ? 0 : -1}
+        />
+        {typeof nodeKey === 'number' ? (
+          <span className="rv-json-number">{nodeKey}</span>
+        ) : (
+          <span className="rv-json-key">"{nodeKey}"</span>
+        )}
+        <span className="rv-tree__colon">: </span>
+        <span className="rv-tree__summary">
+          {isCollapsed ? (
+            <span className="rv-tree__collapsed">{summary}</span>
+          ) : (
+            <span className="rv-tree__bracket">{isArray ? '[' : '{'}</span>
+          )}
+        </span>
+        {isCollapsed && <span className="rv-tree__comma">,</span>}
+      </div>
+
+      {!isCollapsed && (
+        <>
+          {entries.map(([k, v], idx) => (
+            <JsonNode
+              key={k}
+              nodeKey={k}
+              value={v}
+              path={`${path}.${k}`}
+              collapsedPaths={collapsedPaths}
+              onToggle={onToggle}
+              searchTerm={searchTerm}
+              caseSensitive={caseSensitive}
+              depth={depth + 1}
+              isLast={idx === entries.length - 1}
+            />
+          ))}
+          <div className="rv-tree__row" style={{ paddingLeft: depth * 20 }}>
+            <span className="rv-tree__leaf">
+              <span className="rv-tree__bracket">{isArray ? ']' : '}'}</span>
+              {!isLast && <span className="rv-tree__comma">,</span>}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+});
+
+interface JsonTreeProps {
+  data: unknown;
+  searchTerm: string;
+  caseSensitive: boolean;
+  treeRef: (actions: { expandAll: () => void; collapseAll: () => void } | null) => void;
+}
+
+const JsonTree = memo(function JsonTree({
+  data,
+  searchTerm,
+  caseSensitive,
+  treeRef,
+}: JsonTreeProps): React.ReactElement {
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
+
+  const toggle = useCallback((path: string) => {
+    setCollapsedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  const expandAll = useCallback(() => {
+    setCollapsedPaths(new Set());
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    const allPaths = new Set<string>();
+    const walk = (val: unknown, prefix: string): void => {
+      if (typeof val === 'object' && val !== null) {
+        const entries = Array.isArray(val)
+          ? val.map((v, i) => [i, v] as [number, unknown])
+          : Object.entries(val as Record<string, unknown>);
+        for (const [k, v] of entries) {
+          const childPath = `${prefix}.${k}`;
+          if (typeof v === 'object' && v !== null) {
+            allPaths.add(childPath);
+            walk(v, childPath);
+          }
+        }
+      }
+    };
+    walk(data, 'root');
+    setCollapsedPaths(allPaths);
+  }, [data]);
+
+  useEffect(() => {
+    treeRef({ expandAll, collapseAll });
+    return () => treeRef(null);
+  }, [treeRef, expandAll, collapseAll]);
+
+  const isRootArray = Array.isArray(data);
+  const rootEntries = isRootArray
+    ? (data as unknown[]).map((v, i) => [i, v] as [number, unknown])
+    : Object.entries(data as Record<string, unknown>);
+
+  return (
+    <div className="rv-tree" data-tree-root="true">
+      {rootEntries.map(([k, v], idx) => (
+        <JsonNode
+          key={k}
+          nodeKey={k}
+          value={v}
+          path={`root.${k}`}
+          collapsedPaths={collapsedPaths}
+          onToggle={toggle}
+          searchTerm={searchTerm}
+          caseSensitive={caseSensitive}
+          depth={0}
+          isLast={idx === rootEntries.length - 1}
+        />
+      ))}
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Body sub-tab type
 // ---------------------------------------------------------------------------
 
@@ -162,6 +343,7 @@ const BodyDisplay = memo(function BodyDisplay({
 
   // Sub-tab state — local only, not persisted
   const [subTab, setSubTab] = useState<BodySubTab>('pretty');
+  const [treeActions, setTreeActions] = useState<{ expandAll: () => void; collapseAll: () => void } | null>(null);
 
   const { send } = useMessage();
 
@@ -205,13 +387,13 @@ const BodyDisplay = memo(function BodyDisplay({
     );
   }
 
-  // JSON pretty-print attempt
-  const prettyJson = useMemo(() => {
+  const parsedJson = useMemo(() => {
     if (!isJson) return null;
     try {
-      return JSON.stringify(JSON.parse(displayBody), null, 2);
+      const parsed: unknown = JSON.parse(displayBody);
+      return parsed;
     } catch {
-      return displayBody;
+      return null;
     }
   }, [isJson, displayBody]);
 
@@ -280,6 +462,26 @@ const BodyDisplay = memo(function BodyDisplay({
 
         {/* Actions pushed to the right */}
         <div className="rv-sub-tabs__actions">
+          {isJson && parsedJson !== null && (
+            <>
+              <button
+                type="button"
+                className="rv-action-btn"
+                onClick={() => treeActions?.expandAll()}
+                title="Expand all nodes"
+              >
+                ▾ All
+              </button>
+              <button
+                type="button"
+                className="rv-action-btn"
+                onClick={() => treeActions?.collapseAll()}
+                title="Collapse all nodes"
+              >
+                ▴ All
+              </button>
+            </>
+          )}
           <button type="button" className="rv-action-btn" onClick={copyBody} title="Copy to clipboard">
             Copy
           </button>
@@ -305,14 +507,15 @@ const BodyDisplay = memo(function BodyDisplay({
 
       {/* Pretty tab */}
       {activeSubTab === 'pretty' && (
-        isJson && prettyJson !== null ? (
-          <pre
-            className="rv-body-pre rv-json"
-            dangerouslySetInnerHTML={{
-              __html: applySearchHighlightHtml(highlightJson(prettyJson), searchTerm, caseSensitive),
-            }}
-            aria-label="Response body (JSON)"
-          />
+        isJson && parsedJson !== null ? (
+          <div className="rv-tree-wrapper">
+            <JsonTree
+              data={parsedJson}
+              searchTerm={searchTerm}
+              caseSensitive={caseSensitive}
+              treeRef={setTreeActions}
+            />
+          </div>
         ) : (
           <pre
             className={`rv-body-pre${isHtml || isXml ? ' rv-body-pre--markup' : ''}`}
