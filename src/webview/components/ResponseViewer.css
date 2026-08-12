@@ -445,7 +445,7 @@
   align-items: center;
   gap: var(--volt-space-3);
   padding: var(--volt-space-2) var(--volt-space-4);
-  border-bottom: 1px solid var(--volt-border);
+  border-top: 1px solid var(--volt-border);
   background: var(--volt-bg-surface);
   flex-shrink: 0;
 }

@@ -141,9 +141,21 @@ const JsonNode = memo(function JsonNode({
       <div className="rv-tree__row" style={{ paddingLeft: depth * 20 }}>
         <span className="rv-tree__leaf">
           {typeof nodeKey === 'number' ? (
-            <span className="rv-json-number">{nodeKey}</span>
+            <span className="rv-json-number">
+              <PlainTextWithHighlight
+                text={String(nodeKey)}
+                term={searchTerm}
+                caseSensitive={caseSensitive}
+              />
+            </span>
           ) : (
-            <span className="rv-json-key">"{nodeKey}"</span>
+            <span className="rv-json-key">
+              <PlainTextWithHighlight
+                text={`"${nodeKey}"`}
+                term={searchTerm}
+                caseSensitive={caseSensitive}
+              />
+            </span>
           )}
           <span className="rv-tree__colon">: </span>
           <span className={primitiveClass}>
@@ -189,9 +201,21 @@ const JsonNode = memo(function JsonNode({
           tabIndex={showCaret ? 0 : -1}
         />
         {typeof nodeKey === 'number' ? (
-          <span className="rv-json-number">{nodeKey}</span>
+          <span className="rv-json-number">
+            <PlainTextWithHighlight
+              text={String(nodeKey)}
+              term={searchTerm}
+              caseSensitive={caseSensitive}
+            />
+          </span>
         ) : (
-          <span className="rv-json-key">"{nodeKey}"</span>
+          <span className="rv-json-key">
+            <PlainTextWithHighlight
+              text={`"${nodeKey}"`}
+              term={searchTerm}
+              caseSensitive={caseSensitive}
+            />
+          </span>
         )}
         <span className="rv-tree__colon">: </span>
         <span className="rv-tree__summary">
@@ -344,6 +368,16 @@ const BodyDisplay = memo(function BodyDisplay({
   // Sub-tab state — local only, not persisted
   const [subTab, setSubTab] = useState<BodySubTab>('pretty');
   const [treeActions, setTreeActions] = useState<{ expandAll: () => void; collapseAll: () => void } | null>(null);
+  const prevSearchTermRef = useRef('');
+
+  // When searchTerm transitions from empty → non-empty, expand all nodes
+  // so that every match is in the DOM and navigation works correctly.
+  useEffect(() => {
+    if (searchTerm && !prevSearchTermRef.current && treeActions) {
+      treeActions.expandAll();
+    }
+    prevSearchTermRef.current = searchTerm;
+  }, [searchTerm, treeActions]);
 
   const { send } = useMessage();
 
@@ -719,6 +753,7 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
 
   const closeSearch = useCallback(() => {
     setSearchVisible(false);
+    setSearchTerm('');
     setCurrentMatchIndex(0);
   }, []);
 
@@ -907,6 +942,82 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
         </button>
       </div>
 
+      {/* Search bar — moved outside panel-area to prevent body overflow from hiding it */}
+      {(searchVisible || searchTerm) && (
+        <div className="rv-search" role="search" aria-label="Search in response">
+          <input
+            ref={searchInputRef}
+            type="text"
+            className="rv-search__input"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                closeSearch();
+                return;
+              }
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                goToMatch(e.shiftKey ? 'prev' : 'next');
+              }
+            }}
+            placeholder={`Search in ${activeTab === 'headers' ? 'headers' : 'response'}…`}
+            aria-label="Search response"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {searchTerm && (
+            <span className="rv-search__count" aria-live="polite">
+              {matchCount === 0
+                ? 'No matches'
+                : `${currentMatchIndex + 1} / ${matchCount}`}
+            </span>
+          )}
+          <button
+            type="button"
+            className="rv-search__btn"
+            onClick={() => goToMatch('prev')}
+            disabled={matchCount === 0}
+            aria-label="Previous match (Shift+Enter)"
+            title="Previous match (Shift+Enter)"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            className="rv-search__btn"
+            onClick={() => goToMatch('next')}
+            disabled={matchCount === 0}
+            aria-label="Next match (Enter)"
+            title="Next match (Enter)"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            className={`rv-search__btn rv-search__btn--toggle${
+              caseSensitive ? ' rv-search__btn--active' : ''
+            }`}
+            onClick={() => setCaseSensitive((s) => !s)}
+            aria-label="Match case"
+            aria-pressed={caseSensitive}
+            title="Match case"
+          >
+            Aa
+          </button>
+          <button
+            type="button"
+            className="rv-search__btn"
+            onClick={closeSearch}
+            aria-label="Close search (Esc)"
+            title="Close (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Panel content */}
       <div className="rv-panel-area">
         <div
@@ -917,81 +1028,6 @@ export const ResponseViewer = memo(function ResponseViewer(): React.ReactElement
           className="rv-panel"
           ref={bodyContainerRef}
         >
-          {/* Search bar — visible when Ctrl+F was pressed or a term is set */}
-          {(searchVisible || searchTerm) && (
-            <div className="rv-search" role="search" aria-label="Search in response">
-              <input
-                ref={searchInputRef}
-                type="text"
-                className="rv-search__input"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    closeSearch();
-                    return;
-                  }
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    goToMatch(e.shiftKey ? 'prev' : 'next');
-                  }
-                }}
-                placeholder={`Search in ${activeTab === 'headers' ? 'headers' : 'response'}…`}
-                aria-label="Search response"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              {searchTerm && (
-                <span className="rv-search__count" aria-live="polite">
-                  {matchCount === 0
-                    ? 'No matches'
-                    : `${currentMatchIndex + 1} / ${matchCount}`}
-                </span>
-              )}
-              <button
-                type="button"
-                className="rv-search__btn"
-                onClick={() => goToMatch('prev')}
-                disabled={matchCount === 0}
-                aria-label="Previous match (Shift+Enter)"
-                title="Previous match (Shift+Enter)"
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className="rv-search__btn"
-                onClick={() => goToMatch('next')}
-                disabled={matchCount === 0}
-                aria-label="Next match (Enter)"
-                title="Next match (Enter)"
-              >
-                ↓
-              </button>
-              <button
-                type="button"
-                className={`rv-search__btn rv-search__btn--toggle${
-                  caseSensitive ? ' rv-search__btn--active' : ''
-                }`}
-                onClick={() => setCaseSensitive((s) => !s)}
-                aria-label="Match case"
-                aria-pressed={caseSensitive}
-                title="Match case"
-              >
-                Aa
-              </button>
-              <button
-                type="button"
-                className="rv-search__btn"
-                onClick={closeSearch}
-                aria-label="Close search (Esc)"
-                title="Close (Esc)"
-              >
-                ✕
-              </button>
-            </div>
-          )}
           <BodyDisplay
             response={response}
             searchTerm={searchTerm}
