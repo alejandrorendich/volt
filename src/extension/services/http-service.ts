@@ -26,6 +26,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import { bodyRefFor } from './body-ref-utils';
+import { buildRequestUrl } from './url-utils';
 import type { IHttpService } from '../message-router';
 import type {
   HttpRequestDef,
@@ -139,7 +140,7 @@ export class HttpService implements IHttpService, vscode.Disposable {
       requestDef.settings?.sslVerify === false ? false : rejectUnauthorized;
 
     // Build final URL with enabled query params
-    const url = buildUrl(requestDef);
+    const url = buildRequestUrl(requestDef);
 
     // Abort controller — stored so `cancel()` can reach it
     const controller = new AbortController();
@@ -293,27 +294,8 @@ export class HttpService implements IHttpService, vscode.Disposable {
 }
 
 // ---------------------------------------------------------------------------
-// URL builder
+// URL builder (see ./url-utils.ts — extracted for unit testing)
 // ---------------------------------------------------------------------------
-
-function buildUrl(req: HttpRequestDef): string {
-  // Auto-prepend https:// for URLs that have no scheme (H-03)
-  let rawUrl = req.url;
-  if (!/^https?:\/\//i.test(rawUrl)) {
-    rawUrl = 'https://' + rawUrl;
-  }
-
-  const enabledParams = req.queryParams.filter((p) => p.enabled && p.key.trim() !== '');
-  if (enabledParams.length === 0) {
-    return rawUrl;
-  }
-
-  const urlObj = new URL(rawUrl);
-  for (const p of enabledParams) {
-    urlObj.searchParams.append(p.key, p.value);
-  }
-  return urlObj.toString();
-}
 
 // ---------------------------------------------------------------------------
 // Request body builder
