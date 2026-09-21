@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.8.10] - 2026-09-21
+
+### Fixed
+
+- **SAP OData requests with `$filter` (and any other query-param embedded in the URL) are no longer duplicated** — pasting `https://server/b1s/v1/.../$filter=ItemCode eq '2606000310038'` into the URL bar worked correctly in Postman but failed in Volt: the webview parses the URL's query string into the `queryParams` array, and the previous URL builder in `http-service.ts` re-appended those same params onto the already-encoded URL, emitting the param twice (`?$filter=A&$filter=A`). OData parse rejects the request. The URL build logic was extracted into a pure helper (`url-utils.ts`) that de-duplicates by key — when a key is present in both the URL and `queryParams`, the `queryParams` value wins (so `{{var}}` interpolation still resolves correctly). Covered by 12 unit tests, including the exact SAP `$filter` case the user reported.
+
+---
+
 ## [0.8.9] - 2026-08-11
 
 ### Fixed
